@@ -8,8 +8,10 @@ const S={products:[],combos:[],promos:[],ads:[],categories:[],contact:{},theme:{
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const m=n=>'UGX '+Math.round(n).toLocaleString('en-US');
-const pct=p=>Math.max(0,...S.promos.filter(x=>x.active&&pmatch(x,p)).map(x=>+x.pct||0));
-const fin=p=>p.price*(1-pct(p)/100);
+const psave=(x,price)=>x.kind==='amt'?Math.min(+x.pct||0,price):price*(+x.pct||0)/100;
+const dsave=p=>Math.max(0,...S.promos.filter(x=>x.active&&pmatch(x,p)).map(x=>psave(x,p.price)));
+const pct=p=>{const s=dsave(p);return s>0&&p.price>0?Math.max(1,Math.round(s/p.price*100)):0};
+const fin=p=>p.price-dsave(p);
 const P=id=>S.products.find(p=>p.id===id);
 const admin=()=>isAdmin&&!asCust;
 
@@ -28,9 +30,9 @@ ${p.inStock===false?'<div class="mute">Out of stock</div>':`<button class="btn" 
 function shop(){
  const act=S.promos.filter(x=>x.active);
  const list=S.products.filter(p=>(cat==='All'||p.category===cat)&&(!brandF||p.brand===brandF));
- return `${festive()}<div class="hero">${act.map(x=>`<div class="promo"><span class="badge">PROMO</span><b>${esc(x.title)}</b><span>${x.pct}% off ${esc(pdesc(x))}</span></div>`).join('')||'<div class="promo"><b>Wine delivered nationwide</b><span>Order today, enjoy tonight</span></div>'}</div>
+ return `${festive()}<div class="hero">${act.map(x=>`<div class="promo"><span class="badge">PROMO</span><b>${esc(x.title)}</b><span>${esc(pdisc(x))} ${esc(pdesc(x))}</span></div>`).join('')||'<div class="promo"><b>Drinks delivered nationwide</b><span>Order today, enjoy tonight</span></div>'}</div>
  <div class="cats">${catsHtml()}</div>
- <div class="eta">🛵 Delivery in 1–3 days · All regions</div>
+ <div class="eta">🛵 Delivery: ${esc(S.contact.delivery||'1–3 days')} · All regions</div>
  ${homeCombos()}<h2>${brandF?esc(brandF):(cat==='All'?'Popular':cat)} ${(brandF||cat!=='All')?'<button class="btn sm ghost" data-a="clrb">Show all</button>':''}</h2>
  ${list.length?`<div class="plist">${list.map(prodCard).join('')}</div>`:'<p class="mute">No products yet. Check back soon!</p>'}`}
 function shopOld(){
@@ -51,10 +53,10 @@ function cartView(){const L=cartLines();
  if(!L.length&&!S.mine.length)return '<div style="text-align:center;padding:40px 0"><div class="em">🧾</div><b>No orders yet</b><div class="mute">Items you add will appear here.</div></div>';
  let h=L.length?`<h2 style="margin-top:4px">Your cart</h2><div class="card">${L.map(l=>`<div class="row"><span>${esc(l.n)}</span><span>${l.q} × ${m(l.p)} <button class="btn sm ghost" data-a="rm" data-k="${l.k}">−</button></span></div>`).join('')}
  <hr><div class="row"><b>Total</b><b>${m(total())}</b></div></div>
- <h2>Delivery details</h2><label>Full name</label><input id="cn" value="${esc(prof.name)}"><label>Phone</label><input id="cp" type="tel" value="${esc(prof.phone)}">
+ <h2>Delivery details</h2><p class="mute">🛵 Delivery: ${esc(S.contact.delivery||'1–3 days')}</p><label>Full name</label><input id="cn" value="${esc(prof.name)}"><label>Phone</label><input id="cp" type="tel" value="${esc(prof.phone)}">
  <label>State / Region</label><input id="cr" value="${esc(prof.region)}"><label>Address</label><textarea id="ca" rows="2">${esc(prof.address)}</textarea>
  <button class="btn" data-a="order">Place order</button>`:'';
- if(S.mine.length)h+=`<h2>My orders</h2>`+[...S.mine].reverse().map(o=>`<div class="card" style="margin-bottom:8px"><div class="row"><b>${m(o.total)}</b><span class="st">${o.status}</span></div><div class="mute">${new Date(o.ts).toLocaleDateString()} · ${o.lines.map(l=>l.q+'× '+esc(l.n)).join(', ')}</div>${wa()?`<a href="${wa('Hello D&K LIQUOR, I need help with my order #'+o.id.slice(-6))}" target="_blank" rel="noopener" style="font-size:13px;font-weight:600;color:#128c7e">💬 Need help with this order?</a>`:''}</div>`).join('');
+ if(S.mine.length)h+=`<h2>My orders</h2>`+[...S.mine].reverse().map(o=>`<div class="card" style="margin-bottom:8px"><div class="row"><b>${m(o.total)}</b><span class="st">${o.status}</span></div><div class="mute">${new Date(o.ts).toLocaleDateString()} · ${o.lines.map(l=>l.q+'× '+esc(l.n)).join(', ')}</div>${wa()?`<a href="${wa('Hello D&K Beverages, I need help with my order #'+o.id.slice(-6))}" target="_blank" rel="noopener" style="font-size:13px;font-weight:600;color:#128c7e">💬 Need help with this order?</a>`:''}</div>`).join('');
  return h}
 
 /* ADMIN */
@@ -75,7 +77,7 @@ function aProducts(){return `<div class="row"><h2>Products</h2><button class="bt
  ${!S.products.length?'<button class="btn ghost" data-a="seed">Load sample wines</button>':''}
  <div class="list">${S.products.map(p=>`<div class="card row"><div style="display:flex;gap:10px;align-items:center">${p.img?`<img src="${p.img}" style="width:44px;height:44px;object-fit:cover;border-radius:8px">`:''}<div><b>${esc(p.name)}</b><div class="mute">${esc(p.category)} · ${m(p.price)} ${p.inStock===false?'· OUT':''}</div></div></div><button class="btn sm ghost" data-a="editP" data-id="${p.id}">Edit</button></div>`).join('')}</div>`}
 function aCombos(){return `<div class="row"><h2>Combos</h2><button class="btn sm" data-a="editC">+ Add</button></div><div class="list">${S.combos.map(c=>`<div class="card row"><div><b>${esc(c.name)}</b><div class="mute">${m(c.price)} · ${c.active?'Live':'Hidden'}</div></div><button class="btn sm ghost" data-a="editC" data-id="${c.id}">Edit</button></div>`).join('')||'<p class="mute">No combos yet.</p>'}</div>`}
-function aPromos(){return `<div class="row"><h2>Promotions</h2><button class="btn sm" data-a="editR">+ Add</button></div><div class="list">${S.promos.map(c=>`<div class="card row"><div><b>${esc(c.title)}</b><div class="mute">${c.pct}% off ${esc(pdesc(c))} · ${c.active?'Live':'Hidden'}</div></div><button class="btn sm ghost" data-a="editR" data-id="${c.id}">Edit</button></div>`).join('')||'<p class="mute">No promotions yet.</p>'}</div>`}
+function aPromos(){return `<div class="row"><h2>Promotions</h2><button class="btn sm" data-a="editR">+ Add</button></div><div class="list">${S.promos.map(c=>`<div class="card row"><div><b>${esc(c.title)}</b><div class="mute">${esc(pdisc(c))} ${esc(pdesc(c))} · ${c.active?'Live':'Hidden'}</div></div><button class="btn sm ghost" data-a="editR" data-id="${c.id}">Edit</button></div>`).join('')||'<p class="mute">No promotions yet.</p>'}</div>`}
 
 function detailView(){const p=P(detail);if(!p)return '';const d=pct(p),fp=fin(p),out=p.inStock===false;
  const pr=S.promos.filter(x=>x.active&&pmatch(x,p));
@@ -83,13 +85,13 @@ function detailView(){const p=P(detail);if(!p)return '';const d=pct(p),fp=fin(p)
  const rel=S.products.filter(x=>x.id!==p.id&&x.inStock!==false).sort((a,b)=>(b.category===p.category)-(a.category===p.category)).slice(0,8);
  const na='<span class="mute">Not specified</span>';
  const specs=[['Brand',p.brand],['Bottle size',p.volume],['Category',p.category],['Origin',p.origin],['Grape / type',p.grape],['Vintage',p.vintage],['Alcohol',p.abv?p.abv+'% ABV':'']];
- return `<div class="full"><div class="dimg2">${p.img?`<img class="bgb" src="${p.img}" alt=""><img src="${p.img}" alt="">`:`<span>${EM[p.category]||'🍷'}</span>`}<button class="xb" data-a="closeD">✕</button></div>
+ return `<div class="full">${promoBar()}<div class="dimg2">${p.img?`<img class="bgb" src="${p.img}" alt=""><img src="${p.img}" alt="">`:`<span>${EM[p.category]||'🍷'}</span>`}<button class="xb" data-a="closeD">✕</button></div>
  <div class="dbody">${d?`<span class="badge red">-${d}%</span>`:''}
  <div class="dtitle">${esc(p.name)}${p.volume?' '+esc(p.volume):''}</div>
  <div class="dprice">${m(fp)} ${d?`<span class="old" style="font-size:16px">${m(p.price)}</span>`:''}</div>
  <div class="mute">${esc(p.brand?p.brand+' · ':'')}Piece</div>
  ${out?'<p style="text-align:center" class="st">Out of stock</p>':`<div class="pill"><button data-a="dqm">−</button><b>${dq}</b><button data-a="dqp">+</button></div>`}
- ${d?`<div class="pbox"><div>You save <b>${m(p.price-fp)}</b> on each bottle</div>${pr.map(x=>`<span class="badge" style="margin:6px 4px 0 0">🏷 ${esc(x.title)} · ${x.pct}% off</span>`).join('')}</div>`:''}
+ ${d?`<div class="pbox"><div>You save <b>${m(p.price-fp)}</b> on each bottle</div>${pr.map(x=>`<span class="badge" style="margin:6px 4px 0 0">🏷 ${esc(x.title)} · ${esc(pdisc(x))}</span>`).join('')}</div>`:''}
  ${p.desc?`<p>${esc(p.desc)}</p>`:''}${p.notes?`<h3>Tasting notes</h3><p class="mute">${esc(p.notes)}</p>`:''}
  <h3>Product details</h3>${specs.map(s=>`<div class="row spec"><span class="mute">${s[0]}</span>${s[1]?`<b>${esc(s[1])}</b>`:na}</div>`).join('')}
  ${cb.length?`<h3>Available in combo deals</h3>`+cb.map(c=>`<div class="row spec"><span>🎁 ${esc(c.name)}</span><b>${m(cfin(c))}</b></div>`).join(''):''}
@@ -105,7 +107,7 @@ function detailViewOld2(){const p=P(detail);if(!p)return '';const d=pct(p),fp=fi
  <div style="padding:16px"><div class="mute">${esc(p.brand||'')}</div><h2 style="margin:0">${esc(p.name)}</h2><div class="mute">${esc(p.volume||'')}</div>
  <div class="pbox"><div class="row"><span class="price" style="font-size:22px">${m(fp)}</span>${p.inStock===false?'<span class="st">Out of stock</span>':'<span class="st" style="background:#00a08233;color:var(--wine)">In stock</span>'}</div>
  ${d?`<div class="mute">Regular price <span class="old">${m(p.price)}</span> · You save ${m(p.price-fp)} (${d}%)</div>`:'<div class="mute">No discount applies right now</div>'}
- ${pr.map(x=>`<span class="badge" style="margin:6px 4px 0 0">🏷 ${esc(x.title)} · ${x.pct}% off</span>`).join('')}</div>
+ ${pr.map(x=>`<span class="badge" style="margin:6px 4px 0 0">🏷 ${esc(x.title)} · ${esc(pdisc(x))}</span>`).join('')}</div>
  ${p.desc?`<p>${esc(p.desc)}</p>`:''}${p.notes?`<h3>Tasting notes</h3><p class="mute">${esc(p.notes)}</p>`:''}
  <h3>Product details</h3>${specs.map(s=>`<div class="row spec"><span class="mute">${s[0]}</span>${s[1]?`<b>${esc(s[1])}</b>`:na}</div>`).join('')}
  ${cb.length?`<h3>Available in combo deals</h3>`+cb.map(c=>`<div class="row spec"><span>🎁 ${esc(c.name)}</span><b>${m(c.price)}</b></div>`).join(''):''}
@@ -151,8 +153,8 @@ function navHtmlOld(){const n=Object.values(cart).reduce((a,b)=>a+b,0);
 function discBody(){const s=srch.trim().toLowerCase();
  if(s){const r=S.products.filter(p=>[p.name,p.brand,p.category,p.origin,p.grape].join(' ').toLowerCase().includes(s));return r.length?`<div class="plist">${r.map(prodCard).join('')}</div>`:'<p class="mute">Nothing found. Try another name or brand.</p>'}
  const hot=S.products.filter(p=>pct(p)>0&&p.inStock!==false);
- return `${adsView()}<h2>Browse categories</h2><div class="chips">${CATS.map(c=>`<button class="chip" data-a="gocat" data-v="${c}">${EM[c]} ${c}</button>`).join('')}</div>
- ${brands().length?`<h2>Shop by brand</h2><div class="chips">${brands().map(b=>`<button class="chip" data-a="gobrand" data-v="${esc(b)}">${esc(b)}</button>`).join('')}</div>`:''}
+ return `${adsView()}${catItems().some(c=>S.products.some(p=>p.category===c.name))?'<h2>Browse by category</h2>':''}${catItems().map(catSection).join('')}
+ ${brands().length?`<h2>Shop by brand</h2>${brands().map(brandSection).join('')}`:''}
  ${S.combos.some(c=>c.active)?`<h2>Combo deals</h2>${combos()}`:''}
  <h2>On promotion</h2>${hot.length?`<div class="plist">${hot.map(prodCard).join('')}</div>`:'<p class="mute">No promotions right now.</p>'}`}
 function discover(){return `<input id="srch" placeholder="🔍 Search drinks, brands, categories" value="${esc(srch)}"><div id="sres">${discBody()}</div>`}
@@ -162,7 +164,7 @@ function profile(){const n=S.mine.length;
  <label>State / Region</label><input id="pr" value="${esc(prof.region)}"><label>Delivery address</label><textarea id="pa" rows="2">${esc(prof.address)}</textarea>
  <button class="btn" data-a="saveprof">Save details</button>
  <div class="card" style="margin-top:14px"><b>Need help?</b><div class="mute">A question, a problem with an order, or a delivery issue? Talk to us directly.</div>${S.contact.hours?`<div class="mute">🕒 ${esc(S.contact.hours)}</div>`:''}${wa()?`<a class="btn" style="display:block;text-align:center;text-decoration:none;background:#25d366" href="${wa()}" target="_blank" rel="noopener">💬 Chat on WhatsApp</a>`:''}${tel()?`<a class="btn ghost" style="display:block;text-align:center;text-decoration:none" href="${tel()}">📞 Call ${esc(S.contact.phone)}</a>`:''}${!wa()&&!tel()?'<div class="mute">Contact details coming soon.</div>':''}</div>
- <div class="card" style="margin-top:14px"><b>D&amp;K LIQUOR</b><div class="mute">Spirits, wines, mixers and more delivered nationwide. You must be of legal drinking age to order.</div></div>`}
+ <div class="card" style="margin-top:14px"><b>D&amp;K Beverages</b><div class="mute">Spirits, wines, mixers and more delivered nationwide. You must be of legal drinking age to order.</div></div>`}
 document.addEventListener('input',e=>{if(e.target.id==='srch'){srch=e.target.value;$('#sres').innerHTML=discBody()}});
 
 const CC={All:['#00a082','#00d4a8'],Red:['#b3203f','#ff5d7e'],White:['#f5c842','#fff0a8'],'Rosé':['#ff7aa8','#ffc2d9'],Sparkling:['#ff9f1c','#ffe08a'],Spirits:['#8a5a2b','#d9a066'],Other:['#6c5ce7','#b5a9ff']};
@@ -195,13 +197,14 @@ function orderView(){const o=S.orders.find(x=>x.id===ord.o),d=o&&{id:o.uid};if(!
  <h3>Order status</h3><select data-a="status" data-u="${d.id}" data-o="${o.id}">${STAT.map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}</select>
  <button class="btn ghost" data-a="closeord">Back to orders</button></div></div>`}
 
-const wa=t=>{const n=(S.contact.whatsapp||'').replace(/\D/g,'');return n?'https://wa.me/'+n+'?text='+encodeURIComponent(t||S.contact.msg||'Hello D&K LIQUOR, I need help'):''};
+const wa=t=>{const n=(S.contact.whatsapp||'').replace(/\D/g,'');return n?'https://wa.me/'+n+'?text='+encodeURIComponent(t||S.contact.msg||'Hello D&K Beverages, I need help'):''};
 const tel=()=>{const n=(S.contact.phone||'').replace(/[^\d+]/g,'');return n?'tel:'+n:''};
 function aSettings(){const c=S.contact;return `${themePicker()}${catManager()}<h2 style="margin-top:4px">Contact details</h2><p class="mute">Customers see these in the app and can reach you in one tap. Include the country code, for example +256 7XX XXX XXX.</p>
  <label>Phone number for calls</label><input id="sp" type="tel" value="${esc(c.phone||'')}" placeholder="+256 ...">
  <label>WhatsApp number</label><input id="sw" type="tel" value="${esc(c.whatsapp||'')}" placeholder="+256 ...">
- <label>Message customers start the WhatsApp chat with</label><textarea id="sm" rows="2">${esc(c.msg||'Hello D&K LIQUOR, I need help with...')}</textarea>
+ <label>Message customers start the WhatsApp chat with</label><textarea id="sm" rows="2">${esc(c.msg||'Hello D&K Beverages, I need help with...')}</textarea>
  <label>Opening hours (optional)</label><input id="sh" value="${esc(c.hours||'')}" placeholder="Mon–Sat, 9am–10pm">
+ <label>Delivery time (shown to customers)</label><input id="sd" value="${esc(c.delivery||'')}" placeholder="e.g. 1–3 days, or Within 24 hours">
  <button class="btn" data-a="savecontact">Save contact details</button>`}
 
 const THEMES=[
@@ -216,7 +219,7 @@ const THEMES=[
 {id:'blackfriday',emoji:'🏷️',name:'Black Friday',when:'November',msg:'Black Friday. Our biggest discounts of the year',deco:['🏷️','🔥','💥'],v:{wine:'#e03131',wine2:'#ff6b6b',hd:'#000000',hdi:'#ffffff',pn:'#111111',bl:'#e03131',pm1:'#e03131',pm2:'#ff6b6b',pmi:'#ffffff',pni:'#ffffffcc'}},
 {id:'christmas',emoji:'🎄',name:'Christmas',when:'December',msg:'Merry Christmas! Festive deals inside',deco:['❄️','🎄','⭐'],v:{wine:'#1b7f3b',wine2:'#2fa653',hd:'#b3202a',hdi:'#ffffff',pn:'#1f6b3a',bl:'#e8c34a',pm1:'#b3202a',pm2:'#e4474f',pmi:'#ffffff',pni:'#ffffffcc'}},
 {id:'newyear',emoji:'🎆',name:'New Year',when:'January',msg:'Happy New Year! Cheers to a great year',deco:['🎆','✨','🥂'],v:{wine:'#6741d9',wine2:'#9775fa',hd:'#0b1026',hdi:'#ffd43b',pn:'#1c2559',bl:'#ffd43b',pm1:'#1c2559',pm2:'#4c3a9e',pmi:'#ffe066',pni:'#ffffffcc'}},
-{id:'easter',emoji:'🐣',name:'Easter',when:'Spring',msg:'Happy Easter from D&K LIQUOR',deco:['🐣','🌷','🥚'],v:{wine:'#7048e8',wine2:'#9775fa',hd:'#fff3bf',hdi:'#5f3dc4',pn:'#d0bfff',bl:'#7048e8',pm1:'#7048e8',pm2:'#b197fc',pmi:'#ffffff',pni:'#2b1a66b0'}}
+{id:'easter',emoji:'🐣',name:'Easter',when:'Spring',msg:'Happy Easter from D&K Beverages',deco:['🐣','🌷','🥚'],v:{wine:'#7048e8',wine2:'#9775fa',hd:'#fff3bf',hdi:'#5f3dc4',pn:'#d0bfff',bl:'#7048e8',pm1:'#7048e8',pm2:'#b197fc',pmi:'#ffffff',pni:'#2b1a66b0'}}
 ];
 const EXTRA={christmas:{deco:['❄️','❄️','❅','❄️','🎁'],n:28,att:'xmas'},independence:{deco:['🇺🇬','🎉','🇺🇬','🎊'],att:'flag'},heroes:{deco:['🎖️','⭐','🇺🇬'],att:'flag'},halloween:{deco:['🎃','👻','🦇'],att:'halloween'},valentine:{deco:['💖','❤️','💕','💗'],rise:true,att:'garland',gi:['💖','💗','❤️']},girlfriends:{deco:['💖','✨','💅','👭'],rise:true,att:'garland',gi:['🎀','💅','💖']},mothers:{deco:['🌸','🌷','💐','🌺'],att:'garland',gi:['🌷','🌸','💐']},newyear:{deco:['🎊','✨','🎉','🥂'],att:'fireworks'},easter:{deco:['🥚','🐣','🌷'],att:'garland',gi:['🥚','🐰','🌷']},blackfriday:{deco:['🏷️','🔥','💸'],att:'ticker'}};
 THEMES.forEach(t=>Object.assign(t,EXTRA[t.id]||{}));
@@ -241,8 +244,8 @@ function themePicker(){const cur=curTheme().id;
  <button class="btn" data-a="savetext">Save greeting</button><hr style="border:0;border-top:1px solid var(--line);margin:18px 0">`}
 
 const pmatch=(x,p)=>x.all||x.scope==='All'||x.scope===p.category||(x.cats||[]).includes(p.category)||(x.prods||[]).includes(p.id);
-const cpct=c=>Math.max(0,...S.promos.filter(x=>x.active&&(x.combos||[]).includes(c.id)).map(x=>+x.pct||0));
-const cfin=c=>c.price*(1-cpct(c)/100);
+const csave=c=>Math.max(0,...S.promos.filter(x=>x.active&&(x.combos||[]).includes(c.id)).map(x=>psave(x,c.price)));
+const cfin=c=>c.price-csave(c);
 function pdesc(x){if(x.all||x.scope==='All')return 'everything';const a=[],cs=x.cats||(x.scope&&x.scope!=='Custom'?[x.scope]:[]);if(cs.length)a.push(cs.join(', '));const n=(x.prods||[]).length;if(n)a.push(n+' product'+(n>1?'s':''));const k=(x.combos||[]).length;if(k)a.push(k+' combo'+(k>1?'s':''));return a.join(' + ')||'nothing selected'}
 function promoPicker(v){const all=v.all||v.scope==='All',cs=v.cats||(v.scope&&v.scope!=='All'&&v.scope!=='Custom'?[v.scope]:[]);
  const ck=(a,val,on,l)=>`<label class="chk"><input type="checkbox" ${a}="${esc(val)}" ${on?'checked':''}> ${l}</label>`;
@@ -273,6 +276,16 @@ function catManager(){const L=catItems();return `<h2 style="margin-top:4px">Cate
  ${S.categories.length?`<div class="list">${[...S.categories].sort((a,b)=>(a.order||0)-(b.order||0)).map(c=>`<div class="card row"><b>${c.emoji||''} ${esc(c.name)}</b><button class="btn sm ghost" data-a="editK" data-id="${c.id}">Edit</button></div>`).join('')}</div>`:`<div class="mute">Using the default list: ${L.map(c=>esc(c.name)).join(', ')}.</div><button class="btn ghost" data-a="seedcats">Copy the default list so I can edit it</button>`}
  <button class="btn" data-a="editK">+ Add category</button><hr style="border:0;border-top:1px solid var(--line);margin:18px 0">`}
 
+function pdisc(x){return x.kind==='amt'?'UGX '+Math.round(+x.pct||0).toLocaleString('en-US')+' off':(+x.pct||0)+'% off'}
+function promoBar(){if(admin())return '';const L=S.promos.filter(x=>x.active);if(!L.length)return '';
+ const t=L.map(x=>'🏷️ '+esc(x.title)+' · '+esc(pdisc(x))+' '+esc(pdesc(x))).join('\u2003•\u2003');
+ const dur=Math.max(16,Math.round(t.length*.3));
+ return `<div class="pbar"><span style="animation-duration:${dur}s;animation-delay:-${((Date.now()/1000)%dur).toFixed(2)}s">${t}</span></div>`}
+function catSection(c){const L=S.products.filter(p=>p.category===c.name&&p.inStock!==false);if(!L.length)return '';
+ return `<div class="lsec"><div class="lhead" data-a="gocat" data-v="${esc(c.name)}"><span class="lt"><i>${c.emoji||'🍹'}</i><b>${esc(c.name)}</b><em>${L.length} item${L.length>1?'s':''}</em></span><span class="lgo">See all ›</span></div><div class="rel">${L.slice(0,10).map(tileHtml).join('')}</div></div>`}
+function brandSection(b){const L=S.products.filter(p=>p.brand===b&&p.inStock!==false);if(!L.length)return '';
+ return `<div class="lsec"><div class="lhead" data-a="gobrand" data-v="${esc(b)}"><span class="lt"><i>🏷️</i><b>${esc(b)}</b><em>${L.length} item${L.length>1?'s':''}</em></span><span class="lgo">See all ›</span></div><div class="rel">${L.slice(0,10).map(tileHtml).join('')}</div></div>`}
+
 /* MODAL */
 function field(f,v){const val=v[f.k]??f.d??'';
  if(f.t==='select')return `<label>${f.l}</label><select data-f="${f.k}">${f.o.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join('')}</select>`;
@@ -291,14 +304,14 @@ function render(){
  const tabs=A?[['orders','Orders'],['products','Products'],['combos','Combos'],['promos','Promotions'],['ads','Ads'],['settings','Settings']]:[['shop','Home'],['discover','Discover'],['combos','Combos'],['profile','Profile'],['cart','Orders'+(Object.keys(cart).length?` (${Object.values(cart).reduce((a,b)=>a+b,0)})`:'')]];
  if(!tabs.some(t=>t[0]===tab))tab=tabs[0][0];
  let body='';
- if(!aged&&!A)body=`<div class="modal" style="align-items:center"><div class="sheet" style="border-radius:16px;text-align:center"><img src="${LOGO}" alt="D&amp;K LIQUOR" style="width:120px;height:120px;border-radius:50%;margin-bottom:8px"><h2>Are you of legal drinking age?</h2><p class="mute">This shop sells alcohol. You must be of legal drinking age in your country.</p><button class="btn" data-a="age">Yes, enter</button></div></div>`;
+ if(!aged&&!A)body=`<div class="modal" style="align-items:center"><div class="sheet" style="border-radius:16px;text-align:center"><img src="${LOGO}" alt="D&amp;K Beverages" style="width:120px;height:120px;border-radius:50%;margin-bottom:8px"><h2>Are you of legal drinking age?</h2><p class="mute">This shop sells alcohol. You must be of legal drinking age in your country.</p><button class="btn" data-a="age">Yes, enter</button></div></div>`;
  else if(!db)body='<main><p class="mute">'+esc(window.CONNECT_ERR||'Connecting to the shop…')+'</p></main>';
  else body=`<div class="tabs ${A?'':'cust'}">${tabs.map(t=>`<button class="tab ${t[0]===tab?'on':''}" data-a="tab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div><main class="${attOn()?'hasatt':''}">${msg?`<div class="banner">${esc(msg)}</div>`:''}
  ${A?{orders:aOrders,products:aProducts,combos:aCombos,promos:aPromos,ads:aAds,settings:aSettings}[tab]():{shop,combos,discover,profile,cart:cartView}[tab]()}</main>`;
- const keep=['cn','cp','cr','ca','sp','sw','sm','sh','pn','pp','pr','pa'].map(i=>$('#'+i)?.value);const sc=$('.full')?.scrollTop||0;const wy=window.scrollY,hs=['.cats','.hero','.rel','.tabs','.adtrack','.crow'].map(s=>$(s)?.scrollLeft||0);
+ const keep=['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].map(i=>$('#'+i)?.value);const sc=$('.full')?.scrollTop||0;const wy=window.scrollY,hs=['.cats','.hero','.rel','.tabs','.adtrack','.crow'].map(s=>[...document.querySelectorAll(s)].map(e=>e.scrollLeft));
  $('#app').innerHTML=`${isAdmin?`<div class="admin-bar"><span>${asCust?'Previewing as customer':'Admin mode'}</span><span style="display:flex;gap:6px"><button data-a="toggle">${asCust?'Back to admin':'View as customer'}</button><button data-a="signout">Sign out</button></span></div>`:''}
- <header><div style="display:flex;align-items:center;gap:10px"><img class="hlogo" src="${LOGO}" alt="" style="width:38px;height:38px;border-radius:50%"><h1>D&amp;K LIQUOR</h1></div><span class="mute">Spirits, wines &amp; drinks, nationwide</span>${attHtml()}</header>${body}${modalView()}${detail?detailView():''}${peek&&!detail?peekView():''}${ord&&admin()?orderView():''}`;
- ['cn','cp','cr','ca','sp','sw','sm','sh','pn','pp','pr','pa'].forEach((i,n)=>{if($('#'+i)&&keep[n])$('#'+i).value=keep[n]});if($('.full')){$('.full').scrollTop=resetSc?0:sc;resetSc=false}window.scrollTo(0,topNext?0:wy);topNext=false;['.cats','.hero','.rel','.tabs','.adtrack','.crow'].forEach((s,i)=>{if($(s))$(s).scrollLeft=hs[i]});
+ <div class="stick">${promoBar()}<header><div style="display:flex;align-items:center;gap:10px"><img class="hlogo" src="${LOGO}" alt="" style="width:38px;height:38px;border-radius:50%"><h1>D&amp;K Beverages</h1></div><span class="mute">Wines, spirits, mixers &amp; more, nationwide</span>${attHtml()}</header></div>${body}${modalView()}${detail?detailView():''}${peek&&!detail?peekView():''}${ord&&admin()?orderView():''}`;
+ ['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].forEach((i,n)=>{if($('#'+i)&&keep[n])$('#'+i).value=keep[n]});if($('.full')){$('.full').scrollTop=resetSc?0:sc;resetSc=false}window.scrollTo(0,topNext?0:wy);topNext=false;['.cats','.hero','.rel','.tabs','.adtrack','.crow'].forEach((s,i)=>{document.querySelectorAll(s).forEach((e,j)=>{e.scrollLeft=hs[i][j]||0})});
  popC=null;if(!A&&db&&aged)$('#app').insertAdjacentHTML('beforeend',navHtml());
  if(!A&&db&&aged&&wa())$('#app').insertAdjacentHTML('beforeend',`<a class="fab ${tab==='shop'&&Object.keys(cart).length?'up':''}" href="${wa()}" target="_blank" rel="noopener">💬 Chat with us</a>`);
  if(!A&&tab==='shop'&&Object.keys(cart).length)$('#app').insertAdjacentHTML('beforeend',`<div class="cartbar"><button class="btn" data-a="tab" data-v="cart">View cart · ${m(total())}</button></div>`);
@@ -334,7 +347,7 @@ document.addEventListener('click',async ev=>{
  else if(a==='openord'){ord={u:d.u,o:d.o}}
  else if(a==='theme'){await guard(async()=>{await db.collection('settings').doc('theme').set({...S.theme,id:d.v})})}
  else if(a==='savetext'){await guard(async()=>{await db.collection('settings').doc('theme').set({...S.theme,text:$('#tt').value.trim()});msg='Greeting saved'})}
- else if(a==='savecontact'){const c={phone:$('#sp').value.trim(),whatsapp:$('#sw').value.trim(),msg:$('#sm').value.trim(),hours:$('#sh').value.trim()};await guard(async()=>{await db.collection('settings').doc('contact').set(c);msg='Contact details saved'})}
+ else if(a==='savecontact'){const c={phone:$('#sp').value.trim(),whatsapp:$('#sw').value.trim(),msg:$('#sm').value.trim(),hours:$('#sh').value.trim(),delivery:$('#sd').value.trim()};await guard(async()=>{await db.collection('settings').doc('contact').set(c);msg='Contact details saved'})}
  else if(a==='closeord'){ord=null}
  else if(a==='signout'){await window._sb.auth.signOut();location.reload()}
  else if(a==='catsmore'){catsOpen=!catsOpen}
@@ -350,12 +363,12 @@ document.addEventListener('click',async ev=>{
   await guard(async()=>{await db.collection('orders').add({uid,ts:Date.now(),...o,lines,total:total(),status:'New'});for(const k in cart)delete cart[k];msg='Order placed! The shop will contact you shortly.'});
  }
  else if(a==='editP'){const v=d.id?{...P(d.id)}:{};openForm('products',d.id?'Edit product':'New product',[{k:'name',l:'Name'},{k:'brand',l:'Brand'},{k:'category',l:'Category',t:'select',o:CATS},{k:'price',l:'Price',t:'number'},{k:'origin',l:'Origin / region'},{k:'grape',l:'Grape / type'},{k:'vintage',l:'Vintage (year)'},{k:'volume',l:'Bottle size (e.g. 750ml)'},{k:'abv',l:'Alcohol %',t:'number'},{k:'desc',l:'Short description',t:'text'},{k:'notes',l:'Tasting notes',t:'text'},{k:'inStock',l:'In stock',t:'check'}],v,()=>`<label>Product photo</label><div id="imgprev">${v.img?`<img src="${v.img}" style="width:100%;max-height:160px;object-fit:contain;border-radius:10px">`:''}</div><input type="file" accept="image/*" id="imgf">`)}
- else if(a==='editR'){const v=d.id?{...S.promos.find(x=>x.id===d.id)}:{};openForm('promos',d.id?'Edit promotion':'New promotion',[{k:'title',l:'Banner title'},{k:'pct',l:'Discount %',t:'number'},{k:'active',l:'Live now',t:'check'}],v,()=>promoPicker(v))}
+ else if(a==='editR'){const v=d.id?{...S.promos.find(x=>x.id===d.id)}:{};v.kind=v.kind==='amt'?'Amount off (UGX)':'Percent off (%)';openForm('promos',d.id?'Edit promotion':'New promotion',[{k:'title',l:'Banner title'},{k:'kind',l:'Discount type',t:'select',o:['Percent off (%)','Amount off (UGX)']},{k:'pct',l:'Discount value (a percentage, or an amount in UGX)',t:'number'},{k:'active',l:'Live now',t:'check'}],v,()=>promoPicker(v))}
  else if(a==='editC'){const v=d.id?{...S.combos.find(x=>x.id===d.id)}:{};const cur=v.items||[];
   openForm('combos',d.id?'Edit combo':'New combo',[{k:'name',l:'Combo name'},{k:'price',l:'Combo price',t:'number'},{k:'active',l:'Live now',t:'check'}],v,()=>`<label>Included products</label>${S.products.map(p=>{const i=cur.find(x=>x.id===p.id);return `<div class="chk"><input type="checkbox" data-ci="${p.id}" ${i?'checked':''}><span style="flex:1">${esc(p.name)}</span><input type="number" min="1" value="${i?i.q:1}" data-cq="${p.id}"></div>`}).join('')}`)}
  else if(a==='save'){const o=readForm(),{col,v}=modal;
   if((col==='products'||col==='ads')&&v.img)o.img=v.img;
-  if(col==='promos'){o.all=!!document.querySelector('[data-pall]:checked');o.cats=[...document.querySelectorAll('[data-pcat]:checked')].map(e=>e.dataset.pcat);o.prods=[...document.querySelectorAll('[data-pprod]:checked')].map(e=>e.dataset.pprod);o.combos=[...document.querySelectorAll('[data-pcmb]:checked')].map(e=>e.dataset.pcmb);o.scope=o.all?'All':'Custom'}
+  if(col==='promos'){o.kind=String(o.kind).startsWith('Amount')?'amt':'pct';o.all=!!document.querySelector('[data-pall]:checked');o.cats=[...document.querySelectorAll('[data-pcat]:checked')].map(e=>e.dataset.pcat);o.prods=[...document.querySelectorAll('[data-pprod]:checked')].map(e=>e.dataset.pprod);o.combos=[...document.querySelectorAll('[data-pcmb]:checked')].map(e=>e.dataset.pcmb);o.scope=o.all?'All':'Custom'}
   if(col==='combos')o.items=[...document.querySelectorAll('[data-ci]:checked')].map(e=>({id:e.dataset.ci,q:Math.max(1,num(document.querySelector(`[data-cq="${e.dataset.ci}"]`).value))}));
   await guard(async()=>{v.id?await db.collection(col).doc(v.id).set(o):await db.collection(col).add(o);modal=null})}
  else if(a==='del'){if(b.dataset.sure){await guard(async()=>{await db.collection(modal.col).doc(modal.v.id).delete();modal=null})}else{b.dataset.sure=1;b.textContent='Tap again to delete';return}}
@@ -389,7 +402,7 @@ function makeDb(sb){
  })}}
 
 function loginView(sb,err){
- $('#app').innerHTML=`<div class="login"><img src="${LOGO}" alt="" style="width:96px;height:96px;border-radius:50%"><h2>D&amp;K LIQUOR Admin</h2><p class="mute">Staff only. Sign in to manage the shop.</p>${err?`<div class="banner" style="background:#b3262e">${esc(err)}</div>`:''}<label>Email</label><input id="le" type="email" autocomplete="username"><label>Password</label><input id="lp" type="password" autocomplete="current-password"><button class="btn" id="lb">Sign in</button></div>`;
+ $('#app').innerHTML=`<div class="login"><img src="${LOGO}" alt="" style="width:96px;height:96px;border-radius:50%"><h2>D&amp;K Beverages Admin</h2><p class="mute">Staff only. Sign in to manage the shop.</p>${err?`<div class="banner" style="background:#b3262e">${esc(err)}</div>`:''}<label>Email</label><input id="le" type="email" autocomplete="username"><label>Password</label><input id="lp" type="password" autocomplete="current-password"><button class="btn" id="lb">Sign in</button></div>`;
  const go=async()=>{const {error}=await sb.auth.signInWithPassword({email:$('#le').value.trim(),password:$('#lp').value});if(error){loginView(sb,'Wrong email or password.');return}location.reload()};
  $('#lb').onclick=go;$('#lp').onkeydown=e=>{if(e.key==='Enter')go()}}
 

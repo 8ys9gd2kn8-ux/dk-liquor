@@ -91,3 +91,14 @@ label{font-size:13px;color:var(--mute)}
 /* no zooming: stop iPhone zoom-on-focus and double-tap zoom */
 input,select,textarea{font-size:16px!important}
 html,body{touch-action:manipulation;-webkit-text-size-adjust:100%}
+
+/* pinned discount bar + discover lists */
+.stick{position:sticky;top:env(safe-area-inset-top,0px);z-index:5}.stick header{position:relative;top:auto}
+.pbar{overflow:hidden;white-space:nowrap;background:linear-gradient(90deg,var(--pm1),var(--pm2));color:var(--pmi);font-weight:700;font-size:12px;padding:6px 0}
+.pbar span{display:inline-block;padding-left:100%;animation:pmarq linear infinite}
+@keyframes pmarq{from{transform:translateX(0)}to{transform:translateX(-100%)}}
+.full .pbar{position:sticky;top:0;z-index:3;padding-top:calc(6px + env(safe-area-inset-top,0px))}
+.lsec{background:var(--card);border-radius:16px;padding:12px 0 6px 12px;margin-bottom:12px;box-shadow:0 1px 2px #0000000d,0 4px 14px #0000000a}
+.lhead{display:flex;justify-content:space-between;align-items:center;padding-right:12px;margin-bottom:10px;cursor:pointer}
+.lt{display:flex;align-items:center;gap:8px}.lt i{font-style:normal;font-size:22px}.lt b{font-size:15px}.lt em{font-style:normal;color:var(--mute);font-size:12px}
+.lgo{color:var(--wine);font-weight:700;font-size:13px}
