@@ -102,3 +102,5 @@ html,body{touch-action:manipulation;-webkit-text-size-adjust:100%}
 .lhead{display:flex;justify-content:space-between;align-items:center;padding-right:12px;margin-bottom:10px;cursor:pointer}
 .lt{display:flex;align-items:center;gap:8px}.lt i{font-style:normal;font-size:22px}.lt b{font-size:15px}.lt em{font-style:normal;color:var(--mute);font-size:12px}
 .lgo{color:var(--wine);font-weight:700;font-size:13px}
+
+#seo{max-width:720px;margin:0 auto;padding:6px 18px 20px;color:var(--mute);font-size:12px;line-height:1.55;text-align:center}#seo h2{font:700 13px/1.3 -apple-system,"Segoe UI",sans-serif;color:var(--ink);margin:0 0 6px;letter-spacing:.2px}#seo p{margin:0}

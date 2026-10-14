@@ -1,2 +1,4 @@
 User-agent: *
-Disallow: /admin.html
+Allow: /
+Disallow: /dk-liquor/admin.html
+Sitemap: https://8ys9gd2kn8-ux.github.io/dk-liquor/sitemap.xml
