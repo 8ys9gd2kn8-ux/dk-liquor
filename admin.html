@@ -11,10 +11,30 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="D&K Admin">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+html{background:#0d0d0d}
+#splash{position:fixed;inset:0;z-index:99999;background:#0d0d0d;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;opacity:1;transition:opacity .5s ease,visibility .5s}
+#splash.out{opacity:0;visibility:hidden}
+#splash img{width:min(48vw,210px);height:auto;display:block;opacity:0;animation:spFade .7s ease .05s forwards,spGlow 2.4s ease-in-out .8s infinite}
+#splash .sp-name{font:700 13px/1 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif;letter-spacing:.42em;color:#c9a24a;text-transform:uppercase;opacity:0;animation:spFade .7s ease .35s forwards;padding-left:.42em}
+#splash .sp-bar{width:84px;height:2px;border-radius:2px;background:#ffffff1f;overflow:hidden;opacity:0;animation:spFade .5s ease .6s forwards}
+#splash .sp-bar i{display:block;width:40%;height:100%;background:#c9a24a;border-radius:2px;animation:spBar 1.1s ease-in-out infinite}
+@keyframes spFade{to{opacity:1}}
+@keyframes spGlow{0%,100%{filter:drop-shadow(0 0 0 rgba(201,162,74,0))}50%{filter:drop-shadow(0 0 20px rgba(201,162,74,.4))}}
+@keyframes spBar{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+@media(prefers-reduced-motion:reduce){#splash img,#splash .sp-name,#splash .sp-bar{animation:none;opacity:1}#splash .sp-bar i{animation:none;width:100%}}
+</style>
 <link rel="stylesheet" href="style.css"></head><body>
+<div id="splash" aria-hidden="true"><img src="dk-icon-512.png?v=3" alt=""><div class="sp-name">Staff</div><div class="sp-bar"><i></i></div></div>
+<script>(function(){var t0=Date.now(),s=document.getElementById('splash');
+window.hideSplash=function(){if(!s||s.getAttribute('data-gone'))return;s.setAttribute('data-gone','1');var w=Math.max(0,1300-(Date.now()-t0));
+setTimeout(function(){s.className='out';document.documentElement.style.background='';setTimeout(function(){if(s.parentNode)s.parentNode.removeChild(s)},600)},w)};
+setTimeout(window.hideSplash,8000)})();</script>
+
 <div id="fx" class="fx"></div><div id="app"><main>Loading…</main></div>
 <script>window.APP_MODE='admin';</script>
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="orbit.js"></script>
 <script src="app.js"></script>
 </body></html>

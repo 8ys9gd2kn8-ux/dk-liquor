@@ -169,7 +169,9 @@ document.addEventListener('input',e=>{if(e.target.id==='srch'){srch=e.target.val
 
 const CC={All:['#00a082','#00d4a8'],Red:['#b3203f','#ff5d7e'],White:['#f5c842','#fff0a8'],'Rosé':['#ff7aa8','#ffc2d9'],Sparkling:['#ff9f1c','#ffe08a'],Spirits:['#8a5a2b','#d9a066'],Other:['#6c5ce7','#b5a9ff']};
 const CP={Red:['🍷','🍇'],White:['🥂','🍋'],'Rosé':['🌸','🍷'],Sparkling:['🍾','✨'],Spirits:['🥃','🧊'],Other:['🍹','🍇']};
-function catsHtml(){const ph=(Date.now()%2600)/1000,L=catItems(),lim=8,show=catsOpen||L.length<=lim?L:L.slice(0,lim-1);
+function catsHtml(){if(!window.mountOrbit)return catsHtmlOld3();
+ return `<div class="cpanel"><div class="orbit-wrap"><div id="orbit-slot"></div></div><div class="hint">Swipe to spin \u00b7 tap a drink \u00b7 hold to peek inside</div></div>`}
+function catsHtmlOld3(){const ph=(Date.now()%2600)/1000,L=catItems(),lim=8,show=catsOpen||L.length<=lim?L:L.slice(0,lim-1);
  const tile=(c,i)=>`<button class="cat2 ${c.name===cat&&!brandF?'on':''} ${c.name===popC?'pop':''}" data-a="cat" data-v="${esc(c.name)}"><span class="bw"><span class="halo"></span><span class="blob"><i class="cem" style="animation-delay:${(i*0.25-ph).toFixed(2)}s">${c.emoji||'🍹'}${c.emoji2?`<u>${c.emoji2}</u>`:''}</i></span></span><em>${esc(c.name)}</em></button>`;
  return `<div class="cpanel"><div class="cgrid">${show.map(tile).join('')}${L.length>lim?`<button class="cat2" data-a="catsmore"><span class="bw"><span class="blob"><i class="cem" style="font-size:26px">${catsOpen?'▲':'▼'}</i></span></span><em>${catsOpen?'Less':'More'}</em></button>`:''}</div><div class="hint">Hold a category to peek inside</div></div>`}
 function catsHtmlOld2(){const ph=(Date.now()%2600)/1000;
@@ -178,12 +180,13 @@ function peekView(){const L=S.products.filter(p=>p.category===peek),shown=L.filt
  return `<div class="modal"><div class="bd" data-a="closepeek"></div><div class="sheet pk"><div class="row"><h2 style="margin:0">${EM[peek]||''} ${esc(peek)}</h2><span class="mute">${L.length} product${L.length===1?'':'s'}</span></div>
  ${shown.length?`<div class="rel" style="margin-top:12px">${shown.map(tileHtml).join('')}</div>`:'<p class="mute">Nothing here yet. Check back soon!</p>'}
  <button class="btn" data-a="seecat" data-v="${esc(peek)}">See all ${esc(peek)}</button><button class="btn ghost" data-a="closepeek">Close</button></div></div>`}
-let pt=null;
-document.addEventListener('pointerdown',e=>{const b=e.target.closest('.cat2');if(!b||!b.dataset.v)return;clearTimeout(pt);pt=setTimeout(()=>{held=true;peek=b.dataset.v;try{navigator.vibrate&&navigator.vibrate(15)}catch(_){}render()},420)});
+let pt=null,ps=[0,0];
+document.addEventListener('pointerdown',e=>{const b=e.target.closest('.cat2,.orbit-item');if(!b||!b.dataset.v)return;ps=[e.clientX,e.clientY];clearTimeout(pt);pt=setTimeout(()=>{held=true;peek=b.dataset.v;try{navigator.vibrate&&navigator.vibrate(15)}catch(_){}render()},420)});
 const relH=()=>{clearTimeout(pt);setTimeout(()=>{held=false},350)};
 document.addEventListener('pointerup',relH);document.addEventListener('pointercancel',relH);
 document.addEventListener('scroll',()=>clearTimeout(pt),true);
-document.addEventListener('contextmenu',e=>{if(e.target.closest('.cat2'))e.preventDefault()});
+document.addEventListener('pointermove',e=>{if(pt&&Math.hypot(e.clientX-ps[0],e.clientY-ps[1])>8){clearTimeout(pt);pt=null}});
+document.addEventListener('contextmenu',e=>{if(e.target.closest('.cat2,.orbit-item'))e.preventDefault()});
 function catsHtmlOld(){const ph=(Date.now()%2600)/1000;return ['All',...CATS].map((c,i)=>`<button class="cat ${c===cat&&!brandF?'on':''} ${c===popC?'pop':''}" data-a="cat" data-v="${c}"><b class="cico" style="background:linear-gradient(145deg,${CC[c][0]},${CC[c][1]})"><i class="cem" style="animation-delay:${(i*0.22-ph).toFixed(2)}s">${c==='All'?'🛒':EM[c]}</i></b><em>${c}</em></button>`).join('')}
 
 function orderView(){const o=S.orders.find(x=>x.id===ord.o),d=o&&{id:o.uid};if(!o)return '';
@@ -286,6 +289,19 @@ function catSection(c){const L=S.products.filter(p=>p.category===c.name&&p.inSto
 function brandSection(b){const L=S.products.filter(p=>p.brand===b&&p.inStock!==false);if(!L.length)return '';
  return `<div class="lsec"><div class="lhead" data-a="gobrand" data-v="${esc(b)}"><span class="lt"><i>🏷️</i><b>${esc(b)}</b><em>${L.length} item${L.length>1?'s':''}</em></span><span class="lgo">See all ›</span></div><div class="rel">${L.slice(0,10).map(tileHtml).join('')}</div></div>`}
 
+function photoUI(v,l){return `<label>${l}</label><div id="imgprev">${v.img?`<img src="${v.img}" style="width:100%;max-height:160px;object-fit:contain;border-radius:10px">`:''}</div><input type="file" accept="image/*" id="imgf" data-max="300">`}
+let orbitCtl=null,orbitSig='';
+const shortLabel=n=>{let t=String(n).split(' & ')[0];if(t.length>10&&t.includes(' '))t=t.split(' ')[0];return t};
+const orbitItems=()=>catItems().map(c=>({name:c.name,label:shortLabel(c.name),emoji:c.emoji||'\U0001F379',img:c.img||''}));
+function syncOrbit(){if(!orbitCtl)return;const n=(cat!=='All'&&!brandF)?cat:'';orbitCtl.setSelected(n);
+ if(n){const k=S.products.filter(p=>p.category===n).length;orbitCtl.setCenter(n,k+' item'+(k===1?'':'s'),true)}
+ else orbitCtl.setCenter('Pick a drink','Spin, then tap',false)}
+function mountOrbitSlot(){const slot=$('#orbit-slot');if(!slot||!window.mountOrbit)return;
+ const items=orbitItems(),sig=JSON.stringify(items);
+ if(!orbitCtl){orbitCtl=window.mountOrbit({items,onItemClick:i=>{const it=orbitCtl.items[i];if(!it||held)return;cat=it.name;brandF=null;popC=null;peek=null;render()},clickToFront:()=>!held});orbitSig=sig}
+ else if(sig!==orbitSig){orbitCtl.update(items);orbitSig=sig}
+ slot.appendChild(orbitCtl.el);orbitCtl.engine.refresh();syncOrbit()}
+
 /* MODAL */
 function field(f,v){const val=v[f.k]??f.d??'';
  if(f.t==='select')return `<label>${f.l}</label><select data-f="${f.k}">${f.o.map(o=>`<option ${o===val?'selected':''}>${o}</option>`).join('')}</select>`;
@@ -309,10 +325,11 @@ function render(){
  else body=`<div class="tabs ${A?'':'cust'}">${tabs.map(t=>`<button class="tab ${t[0]===tab?'on':''}" data-a="tab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div><main class="${attOn()?'hasatt':''}">${msg?`<div class="banner">${esc(msg)}</div>`:''}
  ${A?{orders:aOrders,products:aProducts,combos:aCombos,promos:aPromos,ads:aAds,settings:aSettings}[tab]():{shop,combos,discover,profile,cart:cartView}[tab]()}</main>`;
  const keep=['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].map(i=>$('#'+i)?.value);const sc=$('.full')?.scrollTop||0;const wy=window.scrollY,hs=['.cats','.hero','.rel','.tabs','.adtrack','.crow'].map(s=>[...document.querySelectorAll(s)].map(e=>e.scrollLeft));
+ if(orbitCtl&&orbitCtl.el.parentNode)orbitCtl.el.remove();
  $('#app').innerHTML=`${isAdmin?`<div class="admin-bar"><span>${asCust?'Previewing as customer':'Admin mode'}</span><span style="display:flex;gap:6px"><button data-a="toggle">${asCust?'Back to admin':'View as customer'}</button><button data-a="signout">Sign out</button></span></div>`:''}
  <div class="stick">${promoBar()}<header><div style="display:flex;align-items:center;gap:10px"><img class="hlogo" src="${LOGO}" alt="" style="width:38px;height:38px;border-radius:50%"><h1>D&amp;K Beverages</h1></div><span class="mute">Wines, spirits, mixers &amp; more, nationwide</span>${attHtml()}</header></div>${body}${modalView()}${detail?detailView():''}${peek&&!detail?peekView():''}${ord&&admin()?orderView():''}`;
  ['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].forEach((i,n)=>{if($('#'+i)&&keep[n])$('#'+i).value=keep[n]});if($('.full')){$('.full').scrollTop=resetSc?0:sc;resetSc=false}window.scrollTo(0,topNext?0:wy);topNext=false;['.cats','.hero','.rel','.tabs','.adtrack','.crow'].forEach((s,i)=>{document.querySelectorAll(s).forEach((e,j)=>{e.scrollLeft=hs[i][j]||0})});
- popC=null;if(!A&&db&&aged)$('#app').insertAdjacentHTML('beforeend',navHtml());
+ mountOrbitSlot();popC=null;if(!A&&db&&aged)$('#app').insertAdjacentHTML('beforeend',navHtml());
  if(!A&&db&&aged&&wa())$('#app').insertAdjacentHTML('beforeend',`<a class="fab ${tab==='shop'&&Object.keys(cart).length?'up':''}" href="${wa()}" target="_blank" rel="noopener">💬 Chat with us</a>`);
  if(!A&&tab==='shop'&&Object.keys(cart).length)$('#app').insertAdjacentHTML('beforeend',`<div class="cartbar"><button class="btn" data-a="tab" data-v="cart">View cart · ${m(total())}</button></div>`);
 }
@@ -352,7 +369,7 @@ document.addEventListener('click',async ev=>{
  else if(a==='signout'){await window._sb.auth.signOut();location.reload()}
  else if(a==='catsmore'){catsOpen=!catsOpen}
  else if(a==='seedcats'){await guard(async()=>{for(let i=0;i<DEFCATS.length;i++){const c=DEFCATS[i];await db.collection('categories').add({name:c.name,emoji:c.emoji,emoji2:c.emoji2||'',order:i+1})}})}
- else if(a==='editK'){const v=d.id?{...S.categories.find(x=>x.id===d.id)}:{order:S.categories.length+1};openForm('categories',d.id?'Edit category':'New category',[{k:'name',l:'Category name (e.g. Gin)'},{k:'emoji',l:'Main emoji'},{k:'emoji2',l:'Small accent emoji (optional)'},{k:'order',l:'Position (1 = first)',t:'number'}],v)}
+ else if(a==='editK'){const v=d.id?{...S.categories.find(x=>x.id===d.id)}:{order:S.categories.length+1};openForm('categories',d.id?'Edit category':'New category',[{k:'name',l:'Category name (e.g. Gin)'},{k:'emoji',l:'Main emoji'},{k:'emoji2',l:'Small accent emoji (optional)'},{k:'order',l:'Position (1 = first)',t:'number'}],v,()=>photoUI(v,'Category photo (optional, replaces the emoji)'))}
  else if(a==='saveprof'){prof={name:$('#pn').value.trim(),phone:$('#pp').value.trim(),region:$('#pr').value.trim(),address:$('#pa').value.trim()};await guard(async()=>{await db.collection('profiles').doc(uid).set(prof);msg='Details saved'})}
  else if(a==='editA'){const v=d.id?{...S.ads.find(x=>x.id===d.id)}:{};const T=['None',...CATS.map(c=>'Category: '+c),...brands().map(b=>'Brand: '+b),...S.products.map(p=>'Product: '+p.name)];
   openForm('ads',d.id?'Edit ad':'New ad',[{k:'title',l:'Ad name (only you see this)'},{k:'target',l:'When a customer taps the ad, show',t:'select',o:T},{k:'active',l:'Live now',t:'check'}],v,()=>`<label>Ad banner (wide image works best)</label><div id="imgprev">${v.img?`<img src="${v.img}" style="width:100%;border-radius:10px">`:''}</div><input type="file" accept="image/*" id="imgf" data-max="900">`)}
@@ -367,7 +384,7 @@ document.addEventListener('click',async ev=>{
  else if(a==='editC'){const v=d.id?{...S.combos.find(x=>x.id===d.id)}:{};const cur=v.items||[];
   openForm('combos',d.id?'Edit combo':'New combo',[{k:'name',l:'Combo name'},{k:'price',l:'Combo price',t:'number'},{k:'active',l:'Live now',t:'check'}],v,()=>`<label>Included products</label>${S.products.map(p=>{const i=cur.find(x=>x.id===p.id);return `<div class="chk"><input type="checkbox" data-ci="${p.id}" ${i?'checked':''}><span style="flex:1">${esc(p.name)}</span><input type="number" min="1" value="${i?i.q:1}" data-cq="${p.id}"></div>`}).join('')}`)}
  else if(a==='save'){const o=readForm(),{col,v}=modal;
-  if((col==='products'||col==='ads')&&v.img)o.img=v.img;
+  if((col==='products'||col==='ads'||col==='categories')&&v.img)o.img=v.img;
   if(col==='promos'){o.kind=String(o.kind).startsWith('Amount')?'amt':'pct';o.all=!!document.querySelector('[data-pall]:checked');o.cats=[...document.querySelectorAll('[data-pcat]:checked')].map(e=>e.dataset.pcat);o.prods=[...document.querySelectorAll('[data-pprod]:checked')].map(e=>e.dataset.pprod);o.combos=[...document.querySelectorAll('[data-pcmb]:checked')].map(e=>e.dataset.pcmb);o.scope=o.all?'All':'Custom'}
   if(col==='combos')o.items=[...document.querySelectorAll('[data-ci]:checked')].map(e=>({id:e.dataset.ci,q:Math.max(1,num(document.querySelector(`[data-cq="${e.dataset.ci}"]`).value))}));
   await guard(async()=>{v.id?await db.collection(col).doc(v.id).set(o):await db.collection(col).add(o);modal=null})}
@@ -402,6 +419,7 @@ function makeDb(sb){
  })}}
 
 function loginView(sb,err){
+ if(window.hideSplash)hideSplash();
  $('#app').innerHTML=`<div class="login"><img src="${LOGO}" alt="" style="width:96px;height:96px;border-radius:50%"><h2>D&amp;K Beverages Admin</h2><p class="mute">Staff only. Sign in to manage the shop.</p>${err?`<div class="banner" style="background:#b3262e">${esc(err)}</div>`:''}<label>Email</label><input id="le" type="email" autocomplete="username"><label>Password</label><input id="lp" type="password" autocomplete="current-password"><button class="btn" id="lb">Sign in</button></div>`;
  const go=async()=>{const {error}=await sb.auth.signInWithPassword({email:$('#le').value.trim(),password:$('#lp').value});if(error){loginView(sb,'Wrong email or password.');return}location.reload()};
  $('#lb').onclick=go;$('#lp').onkeydown=e=>{if(e.key==='Enter')go()}}
@@ -411,7 +429,7 @@ function loginView(sb,err){
  if(APP_MODE==='admin')aged=true;
  render();
  try{
-  if(!window.supabase||!window.SUPABASE_URL||/YOUR-/.test(window.SUPABASE_URL)){window.CONNECT_ERR='This shop is not connected yet. Add your Supabase details in config.js.';render();return}
+  if(!window.supabase||!window.SUPABASE_URL||/YOUR-/.test(window.SUPABASE_URL)){window.CONNECT_ERR='This shop is not connected yet. Add your Supabase details in config.js.';render();if(window.hideSplash)hideSplash();return}
   const sb=window.supabase.createClient(window.SUPABASE_URL,window.SUPABASE_ANON_KEY);window._sb=sb;
   let {data:{session}}=await sb.auth.getSession();
   if(APP_MODE==='admin'){
@@ -422,11 +440,11 @@ function loginView(sb,err){
   }else if(!session){const r=await sb.auth.signInAnonymously();session=r.data&&r.data.session}
   uid=session?session.user.id:'guest';
   db=makeDb(sb);
-  ['products','combos','promos','ads','categories'].forEach(c=>db.collection(c).onSnapshot(s=>{S[c]=s.docs.map(d=>({id:d.id,...d.data()}));if(c==='categories')syncCats();render()},()=>{}));
+  ['products','combos','promos','ads','categories'].forEach(c=>db.collection(c).onSnapshot(s=>{S[c]=s.docs.map(d=>({id:d.id,...d.data()}));if(c==='categories')syncCats();render();if(c==='products'&&window.hideSplash)hideSplash()},()=>{if(c==='products'&&window.hideSplash)hideSplash()}));
   db.collection('settings').doc('contact').onSnapshot(s=>{S.contact=s.exists?s.data():{};render()},()=>{});
   db.collection('settings').doc('theme').onSnapshot(s=>{S.theme=s.exists?s.data():{};render()},()=>{});
   db.collection('orders').onSnapshot(s=>{S.orders=s.docs.map(d=>({id:d.id,...d.data()}));S.mine=S.orders.filter(o=>o.uid===uid).sort((a,b)=>a.ts-b.ts);render()},()=>{});
   if(uid!=='guest')db.collection('profiles').doc(uid).onSnapshot(s=>{if(s.exists)prof={...prof,...s.data()};render()},()=>{});
-  tab=isAdmin?'orders':'shop';render();
- }catch(e){window.CONNECT_ERR='Could not connect to the shop. Please try again.';render()}
+  tab=isAdmin?'orders':'shop';render();setTimeout(()=>{if(window.hideSplash)hideSplash()},3500);
+ }catch(e){window.CONNECT_ERR='Could not connect to the shop. Please try again.';render();if(window.hideSplash)hideSplash()}
 })();
