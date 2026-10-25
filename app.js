@@ -291,12 +291,13 @@ function brandSection(b){const L=S.products.filter(p=>p.brand===b&&p.inStock!==f
 
 function photoUI(v,l){return `<label>${l}</label><div id="imgprev">${v.img?`<img src="${v.img}" style="width:100%;max-height:160px;object-fit:contain;border-radius:10px">`:''}</div><input type="file" accept="image/*" id="imgf" data-max="300">`}
 let orbitCtl=null,orbitSig='';
+window.addEventListener('splashgone',()=>mountOrbitSlot());
 const shortLabel=n=>{let t=String(n).split(' & ')[0];if(t.length>10&&t.includes(' '))t=t.split(' ')[0];return t};
 const orbitItems=()=>catItems().map(c=>({name:c.name,label:shortLabel(c.name),emoji:c.emoji||'\U0001F379',img:c.img||''}));
 function syncOrbit(){if(!orbitCtl)return;const n=(cat!=='All'&&!brandF)?cat:'';orbitCtl.setSelected(n);
  if(n){const k=S.products.filter(p=>p.category===n).length;orbitCtl.setCenter(n,k+' item'+(k===1?'':'s'),true)}
  else orbitCtl.setCenter('Pick a drink','Spin, then tap',false)}
-function mountOrbitSlot(){const slot=$('#orbit-slot');if(!slot||!window.mountOrbit)return;
+function mountOrbitSlot(){const slot=$('#orbit-slot');if(!slot||!window.mountOrbit||window.splashUp)return;
  const items=orbitItems(),sig=JSON.stringify(items);
  if(!orbitCtl){orbitCtl=window.mountOrbit({items,onItemClick:i=>{const it=orbitCtl.items[i];if(!it||held)return;cat=it.name;brandF=null;popC=null;peek=null;render()},clickToFront:()=>!held});orbitSig=sig}
  else if(sig!==orbitSig){orbitCtl.update(items);orbitSig=sig}
@@ -425,6 +426,9 @@ function loginView(sb,err){
  $('#lb').onclick=go;$('#lp').onkeydown=e=>{if(e.key==='Enter')go()}}
 
 /* BOOT */
+let rq=0;const softRender=()=>{if(rq)return;rq=requestAnimationFrame(()=>{rq=0;render()})};
+const need=new Set(['products','combos','promos','ads','categories','contact','theme','orders']);
+const got=n=>{need.delete(n);if(!need.size&&window.hideSplash)hideSplash()};
 (async()=>{
  if(APP_MODE==='admin')aged=true;
  render();
@@ -440,11 +444,11 @@ function loginView(sb,err){
   }else if(!session){const r=await sb.auth.signInAnonymously();session=r.data&&r.data.session}
   uid=session?session.user.id:'guest';
   db=makeDb(sb);
-  ['products','combos','promos','ads','categories'].forEach(c=>db.collection(c).onSnapshot(s=>{S[c]=s.docs.map(d=>({id:d.id,...d.data()}));if(c==='categories')syncCats();render();if(c==='products'&&window.hideSplash)hideSplash()},()=>{if(c==='products'&&window.hideSplash)hideSplash()}));
-  db.collection('settings').doc('contact').onSnapshot(s=>{S.contact=s.exists?s.data():{};render()},()=>{});
-  db.collection('settings').doc('theme').onSnapshot(s=>{S.theme=s.exists?s.data():{};render()},()=>{});
-  db.collection('orders').onSnapshot(s=>{S.orders=s.docs.map(d=>({id:d.id,...d.data()}));S.mine=S.orders.filter(o=>o.uid===uid).sort((a,b)=>a.ts-b.ts);render()},()=>{});
-  if(uid!=='guest')db.collection('profiles').doc(uid).onSnapshot(s=>{if(s.exists)prof={...prof,...s.data()};render()},()=>{});
+  ['products','combos','promos','ads','categories'].forEach(c=>db.collection(c).onSnapshot(s=>{S[c]=s.docs.map(d=>({id:d.id,...d.data()}));if(c==='categories')syncCats();softRender();got(c)},()=>{got(c)}));
+  db.collection('settings').doc('contact').onSnapshot(s=>{S.contact=s.exists?s.data():{};softRender();got('contact')},()=>{got('contact')});
+  db.collection('settings').doc('theme').onSnapshot(s=>{S.theme=s.exists?s.data():{};softRender();got('theme')},()=>{got('theme')});
+  db.collection('orders').onSnapshot(s=>{S.orders=s.docs.map(d=>({id:d.id,...d.data()}));S.mine=S.orders.filter(o=>o.uid===uid).sort((a,b)=>a.ts-b.ts);softRender();got('orders')},()=>{got('orders')});
+  if(uid!=='guest')db.collection('profiles').doc(uid).onSnapshot(s=>{if(s.exists)prof={...prof,...s.data()};softRender()},()=>{});
   tab=isAdmin?'orders':'shop';render();setTimeout(()=>{if(window.hideSplash)hideSplash()},3500);
  }catch(e){window.CONNECT_ERR='Could not connect to the shop. Please try again.';render();if(window.hideSplash)hideSplash()}
 })();
