@@ -106,3 +106,43 @@ html,body{touch-action:manipulation;-webkit-text-size-adjust:100%}
 #seo{max-width:720px;margin:0 auto;padding:6px 18px 20px;color:var(--mute);font-size:12px;line-height:1.55;text-align:center}#seo h2{font:700 13px/1.3 -apple-system,"Segoe UI",sans-serif;color:var(--ink);margin:0 0 6px;letter-spacing:.2px}#seo p{margin:0}
 
 #seo a{color:var(--wine);font-weight:600;text-decoration:none}#seo .seo-contact{margin-top:8px}
+
+/* orbit category carousel (engine adapted from React Bits OrbitImages, by Dominik Koch) */
+.orbit-container{position:relative;margin-left:auto;margin-right:auto;isolation:isolate;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent;width:100%}
+.orbit-container[data-draggable]{cursor:grab;touch-action:pan-y pinch-zoom}
+.orbit-container[data-dragging],.orbit-container[data-dragging] *{cursor:grabbing}
+.orbit-path-svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none}
+.orbit-item{position:absolute;top:0;left:0;will-change:transform,opacity}
+.orbit-container[data-intro] .orbit-item{opacity:0}
+.orbit-item[data-clickable]{cursor:pointer}
+.orbit-item-inner{width:100%;height:100%;overflow:hidden;border-radius:var(--orbit-radius,0px);box-shadow:0 calc(var(--orbit-shadow,0)*16px) calc(var(--orbit-shadow,0)*36px) rgba(0,0,0,calc(var(--orbit-shadow,0)*.45));transition:transform .45s cubic-bezier(.2,.8,.2,1)}
+.orbit-item:hover .orbit-item-inner,.orbit-item:focus-visible .orbit-item-inner{transform:scale(var(--orbit-hover-scale,1))}
+.orbit-item:focus-visible{outline:none}
+.orbit-center-content{position:absolute;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.orbit-wrap{max-width:440px;margin:0 auto;padding:4px 10px 0}
+#orbit-slot{width:100%;aspect-ratio:var(--orbit-ar,1.67)}
+.orbit-tile{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:calc(var(--s,60px)*.03);background:#fff;color:#191919;border:calc(var(--s,60px)*.05) solid var(--bl);border-radius:30%;overflow:hidden;position:relative}
+.orbit-tile .emo{font-style:normal;font-size:calc(var(--s,60px)*.46);line-height:1}
+.orbit-tile em{font-style:normal;font-weight:800;font-size:calc(var(--s,60px)*.16);line-height:1;white-space:nowrap}
+.orbit-tile.hasimg .orbit-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;-webkit-user-drag:none}
+.orbit-tile.hasimg em{position:absolute;left:0;right:0;bottom:0;background:#000b;color:#fff;padding:calc(var(--s,60px)*.04) 0;text-align:center}
+.orbit-item.sel .orbit-item-inner{box-shadow:0 0 0 calc(var(--s,60px)*.06) var(--wine),0 8px 18px #0006}
+.oc{text-align:center;color:var(--pni);display:flex;flex-direction:column;align-items:center;gap:3px;max-width:42%;pointer-events:none}
+.oc b{font-size:14px;font-weight:800;line-height:1.15;color:var(--pni);filter:none}
+.oc span{font-size:10.5px;opacity:.9;line-height:1.2}
+.obtn{pointer-events:auto;margin-top:3px;border:0;border-radius:14px;background:var(--wine);color:#fff;font-weight:700;font-size:11px;padding:5px 11px;cursor:pointer}
+.obtn[hidden]{display:none}
+@media(prefers-reduced-motion:reduce){.orbit-item-inner{transition:none}}
+/* make the category panel run edge to edge (must come after the older .cats rules) */
+.cats{display:block;overflow:visible;padding:0}
+.cpanel{flex:none}
+
+/* combo / promotion screens */
+.stickwrap{position:sticky;top:0;z-index:4}
+.cv .ohead{position:relative;padding-top:12px}
+.stickwrap>.ohead:first-child{padding-top:calc(12px + env(safe-area-inset-top,0px))}
+.cv .pbar{position:relative;padding-top:calc(6px + env(safe-area-inset-top,0px))}
+.pbar,.promo{cursor:pointer}
+.cvlist .cc{flex:none;width:auto;margin-bottom:10px}
+.pimg .qb{position:absolute;top:6px;left:6px;z-index:2;background:var(--wine);color:#fff;font:700 12px/1 sans-serif;padding:3px 8px;border-radius:10px}
+.cc .lgo{margin-top:2px}

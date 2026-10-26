@@ -30,7 +30,7 @@ ${p.inStock===false?'<div class="mute">Out of stock</div>':`<button class="btn" 
 function shop(){
  const act=S.promos.filter(x=>x.active);
  const list=S.products.filter(p=>(cat==='All'||p.category===cat)&&(!brandF||p.brand===brandF));
- return `${festive()}<div class="hero">${act.map(x=>`<div class="promo"><span class="badge">PROMO</span><b>${esc(x.title)}</b><span>${esc(pdisc(x))} ${esc(pdesc(x))}</span></div>`).join('')||'<div class="promo"><b>Drinks delivered nationwide</b><span>Order today, enjoy tonight</span></div>'}</div>
+ return `${festive()}<div class="hero">${act.map(x=>`<div class="promo" data-a="openpromo" data-id="${x.id}"><span class="badge">PROMO</span><b>${esc(x.title)}</b><span>${esc(pdisc(x))} ${esc(pdesc(x))}</span><span style="font-weight:800;font-size:13px;margin-top:4px">See the products ›</span></div>`).join('')||'<div class="promo"><b>Drinks delivered nationwide</b><span>Order today, enjoy tonight</span></div>'}</div>
  <div class="cats">${catsHtml()}</div>
  <div class="eta">🛵 Delivery: ${esc(S.contact.delivery||'1–3 days')} · All regions</div>
  ${homeCombos()}<h2>${brandF?esc(brandF):(cat==='All'?'Popular':cat)} ${(brandF||cat!=='All')?'<button class="btn sm ghost" data-a="clrb">Show all</button>':''}</h2>
@@ -45,7 +45,7 @@ function shopOld(){
 function combos(){const a=S.combos.filter(c=>c.active);
  return a.length?a.map(c=>{const items=(c.items||[]).map(i=>(P(i.id)?i.q+'× '+esc(P(i.id).name):'')).filter(Boolean).join(', ');
  const was=(c.items||[]).reduce((s,i)=>s+(P(i.id)?fin(P(i.id))*i.q:0),0);
- return `<div class="card list"><b>🎁 ${esc(c.name)}</b><div class="mute">${items}</div>
+ return `<div class="card list" data-a="opencombo" data-id="${c.id}" style="cursor:pointer"><b>🎁 ${esc(c.name)}</b><div class="mute">${items}</div>
  <div class="price">${m(cfin(c))} ${was>cfin(c)?`<span class="old">${m(Math.max(was,c.price))}</span> <span class="badge">Save ${m(Math.max(was,c.price)-cfin(c))}</span>`:''}</div>
  <button class="btn" data-a="add" data-k="c:${c.id}">Add combo</button></div>`}).join(''):'<p class="mute">No combo deals right now.</p>'}
 
@@ -91,10 +91,10 @@ function detailView(){const p=P(detail);if(!p)return '';const d=pct(p),fp=fin(p)
  <div class="dprice">${m(fp)} ${d?`<span class="old" style="font-size:16px">${m(p.price)}</span>`:''}</div>
  <div class="mute">${esc(p.brand?p.brand+' · ':'')}Piece</div>
  ${out?'<p style="text-align:center" class="st">Out of stock</p>':`<div class="pill"><button data-a="dqm">−</button><b>${dq}</b><button data-a="dqp">+</button></div>`}
- ${d?`<div class="pbox"><div>You save <b>${m(p.price-fp)}</b> on each bottle</div>${pr.map(x=>`<span class="badge" style="margin:6px 4px 0 0">🏷 ${esc(x.title)} · ${esc(pdisc(x))}</span>`).join('')}</div>`:''}
+ ${d?`<div class="pbox"><div>You save <b>${m(p.price-fp)}</b> on each bottle</div>${pr.map(x=>`<span class="badge" data-a="openpromo" data-id="${x.id}" style="margin:6px 4px 0 0;cursor:pointer">🏷 ${esc(x.title)} · ${esc(pdisc(x))}</span>`).join('')}</div>`:''}
  ${p.desc?`<p>${esc(p.desc)}</p>`:''}${p.notes?`<h3>Tasting notes</h3><p class="mute">${esc(p.notes)}</p>`:''}
  <h3>Product details</h3>${specs.map(s=>`<div class="row spec"><span class="mute">${s[0]}</span>${s[1]?`<b>${esc(s[1])}</b>`:na}</div>`).join('')}
- ${cb.length?`<h3>Available in combo deals</h3>`+cb.map(c=>`<div class="row spec"><span>🎁 ${esc(c.name)}</span><b>${m(cfin(c))}</b></div>`).join(''):''}
+ ${cb.length?`<h3>Available in combo deals</h3>`+cb.map(c=>`<div class="row spec" data-a="opencombo" data-id="${c.id}" style="cursor:pointer"><span>🎁 ${esc(c.name)} ›</span><b>${m(cfin(c))}</b></div>`).join(''):''}
  ${adsView()}${rel.length?`<h2>You might also like</h2><div class="rel">${rel.map(x=>{const q=cart['p:'+x.id]||0;return `<div class="rc" data-a="detail" data-id="${x.id}"><div class="rimg">${x.img?`<img src="${x.img}" alt="">`:(EM[x.category]||'🍷')}<button class="plus ${q?'on':''}" data-a="add" data-k="p:${x.id}">${q||'+'}</button></div><b>${esc(x.name)}</b><span class="mute">${m(fin(x))}</span></div>`}).join('')}</div>`:''}${exploreView(p)}
  </div></div>
  <div class="addbar">${out?'':`<button class="btn" data-a="addn" data-id="${p.id}">Add ${dq} for ${m(fp*dq)}</button>`}</div>`}
@@ -273,6 +273,8 @@ const catItems=()=>S.categories.length?[...S.categories].sort((a,b)=>(a.order||0
 function syncCats(){const L=catItems();CATS.splice(0,CATS.length,...L.map(c=>c.name));for(const k in EM)delete EM[k];L.forEach(c=>{EM[c.name]=c.emoji||'🍹'})}
 syncCats();
 function homeCombos(){if(cat!=='All'||brandF)return '';const L=S.combos.filter(c=>c.active);if(!L.length)return '';
+ return `<h2>Combo deals</h2><div class="crow">${L.map(c=>comboCardHtml(c)).join('')}</div>`}
+function homeCombosOld(){if(cat!=='All'||brandF)return '';const L=S.combos.filter(c=>c.active);if(!L.length)return '';
  return `<h2>Combo deals</h2><div class="crow">${L.map(c=>{const items=(c.items||[]).map(i=>P(i.id)?i.q+'× '+esc(P(i.id).name):'').filter(Boolean).join(', '),was=(c.items||[]).reduce((s,i)=>s+(P(i.id)?fin(P(i.id))*i.q:0),0),pr=cfin(c),q=cart['c:'+c.id]||0;
  return `<div class="cc"><div class="cct">🎁 ${esc(c.name)}</div><div class="mute ccs">${items}</div><div class="price">${m(pr)} ${was>pr?`<span class="old">${m(was)}</span>`:''}</div>${was>pr?`<span class="badge">Save ${m(was-pr)}</span>`:''}<button class="btn sm" data-a="add" data-k="c:${c.id}">${q?'In cart ('+q+') · add more':'Add combo'}</button></div>`}).join('')}</div>`}
 function catManager(){const L=catItems();return `<h2 style="margin-top:4px">Categories</h2><p class="mute">The drink categories customers see on the home screen. Add any type of drink. Renaming a category does not rename it on products already saved.</p>
@@ -283,7 +285,7 @@ function pdisc(x){return x.kind==='amt'?'UGX '+Math.round(+x.pct||0).toLocaleStr
 function promoBar(){if(admin())return '';const L=S.promos.filter(x=>x.active);if(!L.length)return '';
  const t=L.map(x=>'🏷️ '+esc(x.title)+' · '+esc(pdisc(x))+' '+esc(pdesc(x))).join('\u2003•\u2003');
  const dur=Math.max(16,Math.round(t.length*.3));
- return `<div class="pbar"><span style="animation-duration:${dur}s;animation-delay:-${((Date.now()/1000)%dur).toFixed(2)}s">${t}</span></div>`}
+ return `<div class="pbar" data-a="opendeals"><span style="animation-duration:${dur}s;animation-delay:-${((Date.now()/1000)%dur).toFixed(2)}s">${t}</span></div>`}
 function catSection(c){const L=S.products.filter(p=>p.category===c.name&&p.inStock!==false);if(!L.length)return '';
  return `<div class="lsec"><div class="lhead" data-a="gocat" data-v="${esc(c.name)}"><span class="lt"><i>${c.emoji||'🍹'}</i><b>${esc(c.name)}</b><em>${L.length} item${L.length>1?'s':''}</em></span><span class="lgo">See all ›</span></div><div class="rel">${L.slice(0,10).map(tileHtml).join('')}</div></div>`}
 function brandSection(b){const L=S.products.filter(p=>p.brand===b&&p.inStock!==false);if(!L.length)return '';
@@ -293,7 +295,7 @@ function photoUI(v,l){return `<label>${l}</label><div id="imgprev">${v.img?`<img
 let orbitCtl=null,orbitSig='';
 window.addEventListener('splashgone',()=>mountOrbitSlot());
 const shortLabel=n=>{let t=String(n).split(' & ')[0];if(t.length>10&&t.includes(' '))t=t.split(' ')[0];return t};
-const orbitItems=()=>catItems().map(c=>({name:c.name,label:shortLabel(c.name),emoji:c.emoji||'\U0001F379',img:c.img||''}));
+const orbitItems=()=>catItems().map(c=>({name:c.name,label:shortLabel(c.name),emoji:c.emoji||'🍹',img:c.img||''}));
 function syncOrbit(){if(!orbitCtl)return;const n=(cat!=='All'&&!brandF)?cat:'';orbitCtl.setSelected(n);
  if(n){const k=S.products.filter(p=>p.category===n).length;orbitCtl.setCenter(n,k+' item'+(k===1?'':'s'),true)}
  else orbitCtl.setCenter('Pick a drink','Spin, then tap',false)}
@@ -302,6 +304,25 @@ function mountOrbitSlot(){const slot=$('#orbit-slot');if(!slot||!window.mountOrb
  if(!orbitCtl){orbitCtl=window.mountOrbit({items,onItemClick:i=>{const it=orbitCtl.items[i];if(!it||held)return;cat=it.name;brandF=null;popC=null;peek=null;render()},clickToFront:()=>!held});orbitSig=sig}
  else if(sig!==orbitSig){orbitCtl.update(items);orbitSig=sig}
  slot.appendChild(orbitCtl.el);orbitCtl.engine.refresh();syncOrbit()}
+
+let cv=[];
+const comboItems=c=>(c.items||[]).map(i=>({p:P(i.id),q:i.q||1})).filter(x=>x.p);
+const promoItems=x=>S.products.filter(p=>p.inStock!==false&&pmatch(x,p));
+function comboCardHtml(c){const L=comboItems(c),items=L.map(x=>x.q+'\u00d7 '+esc(x.p.name)).join(', '),was=L.reduce((s,x)=>s+fin(x.p)*x.q,0),pr=cfin(c),q=cart['c:'+c.id]||0;
+ return `<div class="cc" data-a="opencombo" data-id="${c.id}"><div class="cct">🎁 ${esc(c.name)}</div><div class="mute ccs">${items}</div><div class="price">${m(pr)} ${was>pr?`<span class="old">${m(was)}</span>`:''}</div>${was>pr?`<span class="badge">Save ${m(was-pr)}</span>`:''}<button class="btn sm" data-a="add" data-k="c:${c.id}">${q?'In cart ('+q+') \u00b7 add more':'Add combo'}</button><span class="lgo">See what\u2019s inside \u203a</span></div>`}
+function cvTop(title,noBar){return `<div class="stickwrap">${noBar?'':promoBar()}<div class="ohead"><button class="xb2" data-a="closecv">\u2190</button><b>${title}</b></div></div>`}
+function collectionView(){const t=cv[cv.length-1];if(!t)return '';
+ if(t.t==='c'){const c=S.combos.find(x=>x.id===t.id);if(!c)return '';
+  const L=comboItems(c),was=L.reduce((s,x)=>s+fin(x.p)*x.q,0),pr=cfin(c),q=cart['c:'+c.id]||0,top=Math.max(was,c.price);
+  const rows=L.map(x=>`<div class="prow" data-a="detail" data-id="${x.p.id}"><div class="pi"><b>${esc(x.p.name)}</b><div class="mute">${esc(x.p.brand||x.p.category)}${x.p.volume?' \u00b7 '+esc(x.p.volume):''}</div><div class="price">${m(fin(x.p))} each</div></div><div class="pimg"><span class="qb">${x.q}\u00d7</span>${x.p.img?`<img src="${x.p.img}" alt="">`:(EM[x.p.category]||'🍹')}</div></div>`).join('');
+  return `<div class="full cv">${cvTop('🎁 '+esc(c.name))}<div class="dbody"><div class="pbox"><div class="row"><span class="price" style="font-size:24px">${m(pr)}</span>${top>pr?`<span class="badge">Save ${m(top-pr)}</span>`:''}</div>${top>pr?`<div class="mute">Bought separately: <span class="old">${m(top)}</span></div>`:''}</div>
+  <h3>What\u2019s inside (${L.length} product${L.length===1?'':'s'})</h3>${rows?`<div class="plist">${rows}</div>`:'<p class="mute">The products in this combo are not available right now.</p>'}</div></div>${detail?'':`<div class="addbar"><button class="btn" data-a="add" data-k="c:${c.id}">${q?'Add another \u00b7 '+q+' in cart':'Add combo \u00b7 '+m(pr)}</button></div>`}`}
+ if(t.t==='p'){const x=S.promos.find(y=>y.id===t.id);if(!x)return '';
+  const L=promoItems(x),cs=S.combos.filter(c=>c.active&&(x.combos||[]).includes(c.id));
+  return `<div class="full cv">${cvTop('🏷\ufe0f '+esc(x.title))}<div class="dbody"><div class="pbox"><b style="font-size:22px">${esc(pdisc(x))}</b><div class="mute">${esc(pdesc(x))}</div></div>
+  ${L.length?`<h3>Products on offer (${L.length})</h3><div class="plist">${L.map(prodCard).join('')}</div>`:''}${cs.length?`<h3>Combos on offer</h3><div class="cvlist">${cs.map(c=>comboCardHtml(c)).join('')}</div>`:''}${!L.length&&!cs.length?'<p class="mute">No products to show for this offer right now.</p>':''}</div></div>`}
+ const P2=S.promos.filter(x=>x.active);
+ return `<div class="full cv">${cvTop('Deals &amp; promotions',true)}<div class="dbody">${P2.length?P2.map(x=>{const ps=promoItems(x).slice(0,10);return `<div class="lsec"><div class="lhead" data-a="openpromo" data-id="${x.id}"><span class="lt"><i>🏷\ufe0f</i><b>${esc(x.title)}</b><em>${esc(pdisc(x))}</em></span><span class="lgo">See all \u203a</span></div>${ps.length?`<div class="rel">${ps.map(tileHtml).join('')}</div>`:`<div class="mute" style="padding:0 12px 10px">${esc(pdesc(x))}</div>`}</div>`}).join(''):'<p class="mute">No promotions right now.</p>'}</div></div>`}
 
 /* MODAL */
 function field(f,v){const val=v[f.k]??f.d??'';
@@ -325,11 +346,11 @@ function render(){
  else if(!db)body='<main><p class="mute">'+esc(window.CONNECT_ERR||'Connecting to the shop…')+'</p></main>';
  else body=`<div class="tabs ${A?'':'cust'}">${tabs.map(t=>`<button class="tab ${t[0]===tab?'on':''}" data-a="tab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div><main class="${attOn()?'hasatt':''}">${msg?`<div class="banner">${esc(msg)}</div>`:''}
  ${A?{orders:aOrders,products:aProducts,combos:aCombos,promos:aPromos,ads:aAds,settings:aSettings}[tab]():{shop,combos,discover,profile,cart:cartView}[tab]()}</main>`;
- const keep=['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].map(i=>$('#'+i)?.value);const sc=$('.full')?.scrollTop||0;const wy=window.scrollY,hs=['.cats','.hero','.rel','.tabs','.adtrack','.crow'].map(s=>[...document.querySelectorAll(s)].map(e=>e.scrollLeft));
+ const keep=['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].map(i=>$('#'+i)?.value);const scs=[...document.querySelectorAll('.full')].map(e=>e.scrollTop);const wy=window.scrollY,hs=['.cats','.hero','.rel','.tabs','.adtrack','.crow'].map(s=>[...document.querySelectorAll(s)].map(e=>e.scrollLeft));
  if(orbitCtl&&orbitCtl.el.parentNode)orbitCtl.el.remove();
  $('#app').innerHTML=`${isAdmin?`<div class="admin-bar"><span>${asCust?'Previewing as customer':'Admin mode'}</span><span style="display:flex;gap:6px"><button data-a="toggle">${asCust?'Back to admin':'View as customer'}</button><button data-a="signout">Sign out</button></span></div>`:''}
- <div class="stick">${promoBar()}<header><div style="display:flex;align-items:center;gap:10px"><img class="hlogo" src="${LOGO}" alt="" style="width:38px;height:38px;border-radius:50%"><h1>D&amp;K Beverages</h1></div><span class="mute">Wines, spirits, mixers &amp; more, nationwide</span>${attHtml()}</header></div>${body}${modalView()}${detail?detailView():''}${peek&&!detail?peekView():''}${ord&&admin()?orderView():''}`;
- ['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].forEach((i,n)=>{if($('#'+i)&&keep[n])$('#'+i).value=keep[n]});if($('.full')){$('.full').scrollTop=resetSc?0:sc;resetSc=false}window.scrollTo(0,topNext?0:wy);topNext=false;['.cats','.hero','.rel','.tabs','.adtrack','.crow'].forEach((s,i)=>{document.querySelectorAll(s).forEach((e,j)=>{e.scrollLeft=hs[i][j]||0})});
+ <div class="stick">${promoBar()}<header><div style="display:flex;align-items:center;gap:10px"><img class="hlogo" src="${LOGO}" alt="" style="width:38px;height:38px;border-radius:50%"><h1>D&amp;K Beverages</h1></div><span class="mute">Wines, spirits, mixers &amp; more, nationwide</span>${attHtml()}</header></div>${body}${modalView()}${cv.length&&!admin()?collectionView():''}${detail?detailView():''}${peek&&!detail?peekView():''}${ord&&admin()?orderView():''}`;
+ ['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].forEach((i,n)=>{if($('#'+i)&&keep[n])$('#'+i).value=keep[n]});{const fl=[...document.querySelectorAll('.full')];fl.forEach((e,i)=>{e.scrollTop=(resetSc&&i===fl.length-1)?0:(scs[i]||0)});resetSc=false}window.scrollTo(0,topNext?0:wy);topNext=false;['.cats','.hero','.rel','.tabs','.adtrack','.crow'].forEach((s,i)=>{document.querySelectorAll(s).forEach((e,j)=>{e.scrollLeft=hs[i][j]||0})});
  mountOrbitSlot();popC=null;if(!A&&db&&aged)$('#app').insertAdjacentHTML('beforeend',navHtml());
  if(!A&&db&&aged&&wa())$('#app').insertAdjacentHTML('beforeend',`<a class="fab ${tab==='shop'&&Object.keys(cart).length?'up':''}" href="${wa()}" target="_blank" rel="noopener">💬 Chat with us</a>`);
  if(!A&&tab==='shop'&&Object.keys(cart).length)$('#app').insertAdjacentHTML('beforeend',`<div class="cartbar"><button class="btn" data-a="tab" data-v="cart">View cart · ${m(total())}</button></div>`);
@@ -343,7 +364,11 @@ async function guard(fn){try{await fn()}catch(e){msg='Could not save: '+(e.messa
 document.addEventListener('click',async ev=>{
  const b=ev.target.closest('[data-a]');if(held)return;if(!b||b.tagName==='SELECT')return;const a=b.dataset.a,d=b.dataset;
  if(a==='age'){aged=true}
- else if(a==='tab'){tab=d.v;msg='';topNext=true}
+ else if(a==='tab'){tab=d.v;msg='';topNext=true;cv=[]}
+ else if(a==='opencombo'){cv.push({t:'c',id:d.id});detail=null;peek=null;resetSc=true}
+ else if(a==='openpromo'){cv.push({t:'p',id:d.id});detail=null;peek=null;resetSc=true}
+ else if(a==='opendeals'){cv.push({t:'d'});detail=null;peek=null;resetSc=true}
+ else if(a==='closecv'){cv.pop()}
  else if(a==='cat'){cat=(cat===d.v&&!brandF?'All':d.v);brandF=null;popC=d.v;peek=null}
  else if(a==='seecat'){cat=d.v;brandF=null;popC=d.v;peek=null}
  else if(a==='closepeek'){peek=null}
