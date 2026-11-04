@@ -31,11 +31,11 @@ D.profile=async uid=>ok(await D.sb.from('pp_profiles').select('*').eq('id',uid).
 D.createProfile=async p=>ok(await D.sb.from('pp_profiles').insert(p).select().single());
 /* ---- identity keys ---- */
 D.getBackup=async uid=>ok(await D.sb.from('pp_key_backups').select('*').eq('user_id',uid).maybeSingle());
-/* returns 'ok' | 'locked' (key not on this device and no passphrase given) */
+/* returns 'ok' | 'locked' (backup exists, key not on this device) | 'nokeys' (first time: no keys yet). Passphrase is asked inside the Planner, never on the Profile page. */
 D.initKeys=async(uid,pass,profile)=>{
  const loc=await C.load(uid);if(loc){D.ident={priv:loc.priv,pub:loc.pub};return 'ok'}
- if(!pass)return 'locked';
  const bk=await D.getBackup(uid);
+ if(!pass)return bk?'locked':'nokeys';
  if(bk){const j=await C.restore(bk,pass),priv=await C.importPriv(j),pub=jpub(j);await C.save(uid,priv,pub);D.ident={priv,pub};
   if(profile&&(!profile.pubkey||profile.pubkey.x!==pub.x))ok(await D.sb.from('pp_profiles').update({pubkey:pub}).eq('id',uid));return 'ok'}
  const g=await C.generate(),priv=await C.importPriv(g.priv);await C.save(uid,priv,g.pub);D.ident={priv,pub:g.pub};
@@ -54,11 +54,11 @@ D.newConvKeys=async(cid,ids,users,me)=>{const k=await C.newConvKey();(D.keys[cid
  const rows=[];for(const id of ids){const u=users[id];if(u&&u.pubkey)rows.push(await wrapRow(cid,1,k,id,u,me))}
  if(rows.length)ok(await D.sb.from('pp_member_keys').insert(rows))};
 /* admin: give the current key to any member who lacks it (new joiners, or members whose device key changed) */
-D.ensureKeys=async(cid,ver,ids,users,me)=>{const k=D.convKey(cid,ver);if(!k)return 0;
+D.ensureKeys=async(cid,ver,ids,users,me)=>{const k=D.convKey(cid,ver),res={added:[],changed:[]};if(!k)return res;
  const have=ok(await D.sb.from('pp_member_keys').select('user_id,version,recipient_fp').eq('conversation_id',cid))||[],rows=[];
- for(const id of ids){const u=users[id];if(!u||!u.pubkey)continue;const fp=await C.fingerprint(u.pubkey);
-  if(!have.some(r=>r.user_id===id&&r.version===ver&&r.recipient_fp===fp))rows.push(await wrapRow(cid,ver,k,id,u,me))}
- if(rows.length)ok(await D.sb.from('pp_member_keys').upsert(rows));return rows.length};
+ for(const id of ids){const u=users[id];if(!u||!u.pubkey)continue;const fp=await C.fingerprint(u.pubkey),r=have.find(x=>x.user_id===id&&x.version===ver);
+  if(!r){res.added.push(id);rows.push(await wrapRow(cid,ver,k,id,u,me))}else if(r.recipient_fp!==fp){res.changed.push(id);rows.push(await wrapRow(cid,ver,k,id,u,me))}}
+ if(rows.length)ok(await D.sb.from('pp_member_keys').upsert(rows));return res};
 /* admin: rotate the key (used after removing a member so they cannot read NEW messages) */
 D.rotate=async(cid,ver,ids,users,me)=>{const k=await C.newConvKey();(D.keys[cid]=D.keys[cid]||{})[ver]=k;const rows=[];
  for(const id of ids){const u=users[id];if(u&&u.pubkey)rows.push(await wrapRow(cid,ver,k,id,u,me))}
@@ -121,5 +121,14 @@ const AV={};D.avatarUrl=async path=>{const c=AV[path];if(c&&c.exp>Date.now())ret
 D.subscribe=cb=>{const ch=D.sb.channel('pp-'+Math.random().toString(36).slice(2));
  ['pp_messages','pp_items','pp_plan_options','pp_votes','pp_members','pp_member_keys','pp_conversations','pp_activity','pp_profiles'].forEach(t=>ch.on('postgres_changes',{event:'*',schema:'public',table:t},p=>cb(t,p)));
  ch.subscribe();D.ch=ch};
+/* ---- account recovery ---- */
+D.resetEmail=async email=>{const r=await D.sb.auth.resetPasswordForEmail(email);if(r.error)throw r.error};
+D.recoverVerify=async(email,token)=>{const r=await D.sb.auth.verifyOtp({email,token,type:'recovery'});if(r.error)throw new Error('That code is wrong or has expired')};
+D.setPassword=async pw=>{const r=await D.sb.auth.updateUser({password:pw});if(r.error)throw r.error};
+D.fn=async body=>{const r=await D.sb.functions.invoke('pp-account',{body});if(r.error){let m='This feature is not available yet';try{const j=await r.error.context.json();m=j.error||m}catch(e){}throw new Error(m)}return r.data};
+D.setSession=async t=>{const r=await D.sb.auth.setSession({access_token:t.access_token,refresh_token:t.refresh_token});if(r.error)throw r.error};
+/* forgot passphrase: a NEW key pair replaces the old one. Old chats become readable again once another member's device shares the chat key. */
+D.resetIdentity=async(uid,pass)=>{await C.wipe(uid);const g=await C.generate(),priv=await C.importPriv(g.priv);await C.save(uid,priv,g.pub);D.ident={priv,pub:g.pub};D.keys={};
+ ok(await D.sb.from('pp_key_backups').upsert(Object.assign({user_id:uid},await C.backup(g.priv,pass))));ok(await D.sb.from('pp_profiles').update({pubkey:g.pub}).eq('id',uid))};
 window.PPData=D;
 })();

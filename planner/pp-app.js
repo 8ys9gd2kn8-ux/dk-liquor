@@ -3,7 +3,7 @@
 (function(){
 'use strict';
 const D=window.PPData,C=window.PPCrypto,uidn=()=>crypto.randomUUID();
-const CFG=Object.assign({primaryVerify:'email',smsEnabled:false},window.DK_PP||{}),PRIM=CFG.smsEnabled&&CFG.primaryVerify==='sms'?'sms':'email';
+const CFG=Object.assign({primaryVerify:'email',smsEnabled:false,accountFunction:false},window.DK_PP||{}),PRIM=CFG.smsEnabled&&CFG.primaryVerify==='sms'?'sms':'email';
 let ME=null,MEP=null,AUTH={state:'loading',err:''},CONVS=[],USERS=D.users,CT=null,CTSRC='',CTM=[],started=false,tmr;
 const PK={date:['cal','Date'],time:['clock','Time'],venue:['pin','Venue']};
 const PP={open:false,view:'chats',cid:null,tab:'plan',itab:'members',sheet:null,q:'',cat:'All',sel:{},cu:null,pk:'date',filt:'all',cq:'',reply:null,mid:null,ng:null,links:[],file:null,focus:false};
@@ -82,7 +82,7 @@ async function loadState(){if(AUTH.state!=='in')return;
   const old=new Map(CONVS.map(c=>[c.id,c]));CONVS=await Promise.all(d.convs.map(r=>buildConv(r,d,old.get(r.id))));
   CONVS.filter(c=>isAd(c)&&D.latest(c.id)>=c.keyVer).forEach(ensureKeys);draw()}catch(e){console.error(e);toast('Could not refresh. Check your connection.')}}
 const ENS={};
-async function ensureKeys(c){if(ENS[c.id]&&Date.now()-ENS[c.id]<20000)return;ENS[c.id]=Date.now();try{await D.loadProfiles(c.members.map(m=>m.u));await D.ensureKeys(c.id,c.keyVer,c.members.map(m=>m.u),USERS,ME)}catch(e){console.warn('key share',e)}}
+async function ensureKeys(c){if(ENS[c.id]&&Date.now()-ENS[c.id]<20000)return;ENS[c.id]=Date.now();try{await D.loadProfiles(c.members.map(m=>m.u));const r=await D.ensureKeys(c.id,c.keyVer,c.members.map(m=>m.u),USERS,ME);for(const id of r.changed||[])sysMsg(c,{k:'keychanged',id})}catch(e){console.warn('key share',e)}}
 function schedule(){clearTimeout(tmr);tmr=setTimeout(loadState,350)}
 async function onRT(table,p){
  if(table==='pp_messages'&&p.eventType==='INSERT'&&p.new){const c=conv(p.new.conversation_id);if(!c){schedule();return}const ex=c.msgs.find(x=>x.id===p.new.id);
@@ -106,7 +106,7 @@ async function sendPlain(c,kind,payload){const id=uidn(),x={id,who:ME,type:kind,
 const logA=(c,t,item)=>{c.log.unshift({ts:Date.now(),t});D.activity(c.id,ME,t,item).catch(()=>{})};
 function sysText(x){const o=x.sys||{},a=nm(o.a),ids=(o.ids||[]).map(nm).join(', ');
  return {created:a+' created this group',added:a+' added '+ids,removed:a+' removed '+nm(o.id),admin:a+(o.on?' made '+nm(o.id)+' an admin':' dismissed '+nm(o.id)+' as admin'),adminonly:o.on?'Only admins can send messages now':'All members can send messages now',
-  lock:a+' locked in '+(PK[o.pk]||['','item'])[1].toLowerCase()+': '+fv(o.pk,o.v),unlock:a+' reopened '+(PK[o.pk]||['','item'])[1].toLowerCase()+' for discussion',joined:full(o.a)+' joined using an invitation link'}[o.k]||''}
+  keychanged:full(o.id)+"'s security code changed",lock:a+' locked in '+(PK[o.pk]||['','item'])[1].toLowerCase()+': '+fv(o.pk,o.v),unlock:a+' reopened '+(PK[o.pk]||['','item'])[1].toLowerCase()+' for discussion',joined:full(o.a)+' joined using an invitation link'}[o.k]||''}
 /* ---------------- Shadow DOM host (shop CSS can never leak in, and vice versa) ---------------- */
 document.body.insertAdjacentHTML('beforeend','<div id="pphost"></div>');
 const SR=document.getElementById('pphost').attachShadow({mode:'open'});SR.innerHTML='<style>'+window.PP_CSS+'</style><div id="pp"></div>';
@@ -115,17 +115,21 @@ const g=id=>SR.getElementById(id);
 const REG={mode:'register',step:'form',f:{},err:'',note:'',ch:'sms',sent:0,tries:0,anon:false,needEmail:false,busy:false,invite:false},roots=new Set(),FP={};
 const EMRE=/^\S+@\S+\.\S+$/;
 function fpOf(u){const p=USERS[u];if(!p||!p.pubkey)return '';if(FP[u])return FP[u];FP[u]='…';D.fingerprint(p.pubkey).then(v=>{FP[u]=v;draw();drawReg()});return FP[u]}
-const fld=(l,k,o)=>`<label class="fl2">${l}<input class="fi" data-rf="${k}" ${o&&o.type?`type="${o.type}"`:''} ${o&&o.ph?`placeholder="${o.ph}"`:''} ${o&&o.ac?`autocomplete="${o.ac}"`:'autocomplete="off"'} value="${esc((REG.f[k]!==undefined?REG.f[k]:(o&&o.def)||''))}"></label>`;
+const fld=(l,k,o)=>`<label class="fl2">${l}<input class="fi" data-rf="${k}" ${o&&o.ro?'readonly style="opacity:.75"':''} ${o&&o.type?`type="${o.type}"`:''} ${o&&o.ph?`placeholder="${o.ph}"`:''} ${o&&o.ac?`autocomplete="${o.ac}"`:'autocomplete="off"'} value="${esc(o&&o.ro?(o.def||''):(REG.f[k]!==undefined?REG.f[k]:(o&&o.def)||''))}"></label>`;
 const btn=(t,a,c)=>`<button class="${c||'pb'}" style="${c?'':'width:100%'}" data-ra="${a}" ${REG.busy?'disabled':''}>${REG.busy&&!c?'Please wait…':t}</button>`;
-function regHtml(){const er=REG.err||AUTH.err?`<div class="warn bad">${esc(REG.err||AUTH.err)}</div>`:'',nt=REG.note?`<div class="warn" style="background:#d6f5e6;color:#0a7a43">${esc(REG.note)}</div>`:'';
+function regHtml(ctx){const er=REG.err||AUTH.err?`<div class="warn bad">${esc(REG.err||AUTH.err)}</div>`:'',nt=REG.note?`<div class="warn" style="background:#d6f5e6;color:#0a7a43">${esc(REG.note)}</div>`:'';
  if(AUTH.state==='loading')return '<p class="mu">Loading your account…</p>';
- if(AUTH.state==='locked')return `<h4>${ic('lock',18)} Unlock your messages</h4><p class="mu">Your private messages are end-to-end encrypted. Enter your message passphrase to unlock them on this device.</p>${er}${fld('Message passphrase','upass',{type:'password',ac:'current-password'})}${btn('Unlock','unlock')}<button class="gb" style="margin-top:8px" data-ra="signout">Sign out</button>`;
- if(AUTH.state==='setup')return `<h4>Finish setting up your account</h4><p class="mu">Your phone is verified. Choose how friends will find you and protect your messages.</p>${er}${fld('Full name','name',{ac:'name'})}${fld('Username (friends tag you with @)','user')}${fld('Message passphrase (min 8)','pass',{type:'password'})}<div class="mu">This encrypts your messages and is never sent to us. We cannot reset it.</div>${btn('Create profile','setup')}`;
- if(AUTH.state==='in'){const me=MEP||{},ct=CT?`${CT.length} contacts read on this device · ${CTM.length} on D&K`:'Not shared';
+ if((AUTH.state==='locked'||AUTH.state==='nokeys')&&ctx!=='planner'&&REG.step!=='contacts')return `<h4>One more step</h4><p class="mu">Open Chats to ${AUTH.state==='nokeys'?'secure your messages':'unlock your messages'} on this device.</p><div class="row" style="flex-wrap:wrap"><button class="pb" data-ra="openpp">${ic('chats',16)} Open Chats</button><button class="gb" data-ra="signout">Sign out</button></div>`;
+ if(AUTH.state==='nokeys'&&ctx==='planner')return `<h4>${ic('lock',18)} Secure your messages</h4><p class="mu">Your chats are end-to-end encrypted. Choose a message passphrase. It protects your private key and is never sent to us, so we cannot reset it. Use something different from your password and write it down somewhere safe.</p>${er}${fld('Message passphrase (min 8)','np',{type:'password',ac:'new-password'})}${fld('Repeat passphrase','np2',{type:'password',ac:'new-password'})}${btn('Secure my messages','mkkeys')}<button class="gb" style="width:100%;margin-top:8px" data-ra="signout">Sign out</button>`;
+ if(AUTH.state==='locked'&&ctx==='planner'){if(REG.step==='resetpass')return `<h4>Reset your message passphrase</h4><p class="mu">This creates a new encryption key for this device. We cannot recover the old passphrase. Your chats stay safe on the server, and each chat becomes readable again once another member of it opens the app and shares the key with you. They will see "your security code changed".</p>${er}${fld('New message passphrase (min 8)','np',{type:'password'})}${btn('Reset passphrase','dopass')}<button class="gb" style="width:100%;margin-top:8px" data-ra="passback">Back</button>`;
+  return `<h4>${ic('lock',18)} Unlock your messages</h4><p class="mu">Your private messages are end-to-end encrypted. Enter your message passphrase to unlock them on this device.</p>${er}${fld('Message passphrase','upass',{type:'password',ac:'current-password'})}${btn('Unlock','unlock')}<div class="row" style="margin-top:8px;flex-wrap:wrap"><button class="gb" data-ra="gopass">Forgot passphrase?</button><button class="gb" data-ra="signout">Sign out</button></div>`}
+ if(AUTH.state==='setup'){const au=AUTH.user||{},hasE=!!au.email,hasP=!!au.phone,ph0=hasP?'0'+D.e164(au.phone).replace(/^256/,''):'';
+  return `<h4>Create your D&K account</h4><div class="stp"><i class="on"></i><i class="on"></i><i></i></div><p class="mu">Your ${hasE?'email':'phone number'} is verified. Complete the details below to finish.</p>${er}
+ ${fld('Full name','name',{ac:'name'})}${fld('Username (friends tag you with @)','user')}${fld(hasE?'Email (verified)':'Email (optional)','email',{type:'email',ac:'email',ro:hasE,def:au.email||''})}${fld(hasP?'Phone number (verified)':'Phone number (shown to people in your chats)','phone',{type:'tel',ph:'07xx xxx xxx',ac:'tel',ro:hasP,def:ph0})}${fld('Password (min 8)','pw',{type:'password',ac:'new-password'})}${btn('Create account','setup')}<button class="gb" style="width:100%;margin-top:8px" data-ra="signout">Sign out and start over</button>`}
+ if(AUTH.state==='in'||(REG.step==='contacts'&&(AUTH.state==='nokeys'||AUTH.state==='locked'))){const me=MEP||{},ct=CT?`${CT.length} contacts read on this device · ${CTM.length} on D&K`:'Not shared';
   if(REG.step==='contacts')return `<h4>Find your friends on D&K</h4><div class="stp"><i class="on"></i><i class="on"></i><i class="on"></i></div><p class="mu">Allow access to your contacts to see which friends are already on D&K when you build a group.</p><div class="cd" style="background:var(--bg)"><div class="mu">${ic('shield',16)} Your contact list stays on your phone. Only scrambled (hashed) phone numbers are sent to find matches; contacts who are not on D&K are never stored.</div></div>${CFG.smsEnabled?'':'<p class="mu">Friends appear in suggestions once they have verified their phone number. SMS phone verification is coming soon.</p>'}${btn('Allow contacts access','allow')}<button class="gb" style="width:100%;margin-top:8px" data-ra="skip">Not now</button>`;
   return `<div class="ph">${av(me.name,me.avatar_path,72,ME)}<div class="sp"><b style="font-size:17px">${esc(me.name||'')}</b><div class="mu">@${esc(me.username||'')} · +${esc(me.phone||'')}${me.phone_verified?' (verified)':' (not verified)'}</div></div></div>
   <div class="row" style="flex-wrap:wrap;margin-bottom:8px"><label class="gb" style="cursor:pointer">${ic('camera',16)} ${me.avatar_path?'Change photo':'Add photo'}<input type="file" accept="image/jpeg,image/png,image/webp" hidden data-file="user"></label>${me.avatar_path?`<button class="gb" data-ra="rmphoto">Remove photo</button>`:''}</div>${nt}${er}
-  <div class="mu">${ic('lock',14)} End-to-end encrypted. Your key fingerprint:</div><div class="fpr">${esc(fpOf(ME))}</div>
   <div class="mu" style="margin-top:8px">Contacts: ${ct}</div><div class="row" style="margin-top:10px;flex-wrap:wrap"><button class="pb" data-ra="openpp">${ic('chats',16)} Open Chats</button><button class="gb" data-ra="allow">${CT?'Refresh contacts':'Allow contacts'}</button>${CT?'<button class="gb" data-ra="rmct">Remove contacts</button>':''}<button class="gb" data-ra="signout">${ic('logout',16)} Sign out</button></div>`}
  /* signed out */
  if(REG.step==='verify'){const sms=REG.ch==='sms',dm=window.__DK_OTP&&window.__DK_OTP();
@@ -134,16 +138,16 @@ function regHtml(){const er=REG.err||AUTH.err?`<div class="warn bad">${esc(REG.e
   <input class="fi code" data-rf="code" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code" value="${esc(REG.f.code||'')}">${btn('Verify and create account','verify')}
   <div class="row" style="margin-top:10px"><button class="gb sp" data-ra="resend" data-rt="1">Resend code</button>${CFG.smsEnabled?`<button class="gb sp" data-ra="switch">${sms?'Use email instead':'Use SMS instead'}</button>`:''}</div>
   ${REG.needEmail?`<div style="margin-top:8px">${fld('Your email','email',{type:'email'})}<button class="pb" data-ra="switch">Send code to email</button></div>`:''}<button class="gb" style="margin-top:8px" data-ra="back">Back</button>`}
- if(REG.mode==='signin')return `<h4>Sign in to D&K</h4>${REG.invite?'<div class="warn">Sign in or register to join the group you were invited to.</div>':''}${er}${fld('Email or phone number','sid',{ac:'username'})}${fld('Password','spw',{type:'password',ac:'current-password'})}${btn('Sign in','signin')}<button class="gb" style="width:100%;margin-top:8px" data-ra="mode">Create a new account</button>`;
+ if(REG.mode==='forgot'){if(REG.step==='code')return `<h4>Enter your reset code</h4><p class="mu">If an account matches, we sent a 6-digit code to its email address.</p>${nt}${er}${window.__DK_OTP&&window.__DK_OTP()?`<div class="sms"><small>DEMO ONLY: this preview cannot send real email</small>Your reset code is <b>${esc(window.__DK_OTP().code)}</b>.</div>`:''}<input class="fi code" data-rf="rcode" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="one-time-code" value="${esc(REG.f.rcode||'')}">${fld('New password (min 8)','rpw',{type:'password',ac:'new-password'})}${btn('Reset password','doreset')}<button class="gb" style="width:100%;margin-top:8px" data-ra="forgotback">Back</button>`;
+  return `<h4>Reset your password</h4><p class="mu">${CFG.accountFunction?'Enter the email you signed up with, or your username.':'Enter the email you signed up with.'} We will email you a 6-digit code.</p>${er}${fld(CFG.accountFunction?'Email or username':'Email','rid',{ac:'username'})}${btn('Send reset code','sendreset')}<button class="gb" style="width:100%;margin-top:8px" data-ra="tosignin">Back to sign in</button>`}
+ if(REG.mode==='signin')return `<h4>Sign in to D&K</h4>${REG.invite?'<div class="warn">Sign in or register to join the group you were invited to.</div>':''}${nt}${er}${fld(CFG.accountFunction?'Email, phone number or username':'Email or phone number','sid',{ac:'username'})}${fld('Password','spw',{type:'password',ac:'current-password'})}${btn('Sign in','signin')}<div class="row" style="margin-top:8px"><button class="gb sp" data-ra="forgotstart">Forgot password?</button><button class="gb sp" data-ra="mode">Create account</button></div><p class="mu" style="margin-top:8px">Forgot your username? Sign in with your email or phone number instead. Your username is shown on your profile once you are in.</p>`
  return `<h4>Create your D&K account</h4><div class="stp"><i class="on"></i><i></i><i></i></div>${REG.invite?'<div class="warn">Register to join the group you were invited to. It takes a minute.</div>':''}<p class="mu">One account for the shop and the Party Planner. We verify your ${PRIM==='sms'?'phone':'email'} so the account is really yours.</p>${er}
- ${fld('Full name','name',{ac:'name'})}${fld('Username (friends tag you with @)','user')}${PRIM==='email'?fld('Email (we send your verification code here)','email',{type:'email',ac:'email'})+fld('Phone number (shown to people in your chats)','phone',{type:'tel',ph:'07xx xxx xxx',ac:'tel'}):fld('Phone number (we text you a code)','phone',{type:'tel',ph:'07xx xxx xxx',ac:'tel'})+fld('Email (optional, backup if SMS fails)','email',{type:'email',ac:'email'})}${fld('Password (min 8)','pw',{type:'password',ac:'new-password'})}${fld('Message passphrase (min 8, different from password)','pass',{type:'password'})}
- <div class="mu" style="margin-bottom:8px">${ic('lock',14)} The passphrase encrypts your private messages on your device and is never sent to us. We cannot reset it: if you forget it and lose this device, old messages cannot be recovered.</div>${btn('Send verification code','send')}<button class="gb" style="width:100%;margin-top:8px" data-ra="mode">I already have an account</button>`}
+ ${fld('Full name','name',{ac:'name'})}${fld('Username (friends tag you with @)','user')}${PRIM==='email'?fld('Email (we send your verification code here)','email',{type:'email',ac:'email'})+fld('Phone number (shown to people in your chats)','phone',{type:'tel',ph:'07xx xxx xxx',ac:'tel'}):fld('Phone number (we text you a code)','phone',{type:'tel',ph:'07xx xxx xxx',ac:'tel'})+fld('Email (optional, backup if SMS fails)','email',{type:'email',ac:'email'})}${fld('Password (min 8)','pw',{type:'password',ac:'new-password'})}${btn('Send verification code','send')}<button class="gb" style="width:100%;margin-top:8px" data-ra="mode">I already have an account</button>`}
 function drawReg(){roots.forEach(r=>{if(!r.host.isConnected){roots.delete(r);return}const el=r.querySelector('[data-rm]');if(el){const f=r.activeElement&&r.activeElement.dataset&&r.activeElement.dataset.rf;el.innerHTML=regHtml();if(f){const i=r.querySelector('[data-rf="'+f+'"]');if(i){i.focus();try{i.setSelectionRange(99,99)}catch(e){}}}}})}
 function validateReg(f){const p=D.e164(f.phone);
  if(!f.name||f.name.length>80)return 'Enter your full name.';if(!/^[a-zA-Z0-9_]{3,20}$/.test(f.user||''))return 'Username: 3 to 20 letters, numbers or underscore.';
  if(p.length<9||p.length>15)return 'Enter a valid phone number.';if(PRIM==='email'?!EMRE.test(f.email||''):(f.email&&!EMRE.test(f.email)))return 'Enter a valid email address.';
- if((f.pw||'').length<8)return 'Password needs at least 8 characters.';if((f.pass||'').length<8)return 'Message passphrase needs at least 8 characters.';
- if(f.pass===f.pw)return 'Your message passphrase must be different from your password.';return ''}
+ if((f.pw||'').length<8)return 'Password needs at least 8 characters.';return ''}
 async function askContacts(){CT=null;
  try{if(navigator.contacts&&navigator.contacts.select){const r=await navigator.contacts.select(['name','tel'],{multiple:true});CT=r.filter(c=>c.tel&&c.tel[0]).map(c=>({name:(c.name&&c.name[0])||c.tel[0],phone:c.tel[0]}));CTSRC='phone'}}catch(e){}
  if(!CT&&window.DK_DEMO_CONTACTS){CT=window.DK_DEMO_CONTACTS.map(c=>Object.assign({},c));CTSRC='demo'}
@@ -157,10 +161,15 @@ async function boot(){try{const u=await D.realUser();
   MEP=prof;USERS[ME]=prof;AUTH.err='';
   let ks;try{ks=await D.initKeys(ME,AUTH.pass||null,prof)}catch(e){AUTH.pass=null;AUTH.state='locked';AUTH.err=e.message;return}AUTH.pass=null;
   if(ks==='locked'){AUTH.state='locked';return}
+  if(ks==='nokeys'){AUTH.state='nokeys';return}
   AUTH.state='in';await loadState();if(!started){started=true;D.subscribe(onRT)}await afterAuth()}
  catch(e){console.error(e);AUTH.state='out';AUTH.err='Could not reach the server. Please try again.'}finally{draw();drawReg()}}
+/* The shop reads the signed-in user once when the page loads, so after switching accounts the page must reload. */
+async function switchedAccount(){if(window.DK_DEMO){await boot();return}location.reload()}
+async function signOutNow(){const id=ME;await D.signOut(id);if(!window.DK_DEMO){location.reload();return}
+ ME=null;MEP=null;CONVS=[];CT=null;CTM=[];DECC.clear();started=false;AUTH.state='out';AUTH.err='';REG.mode='signin';REG.step='form';REG.f={};REG.busy=false;PP.open=false;draw();drawReg()}
 async function regAct(x){const a=x.dataset.ra,root=x.getRootNode(),f=REG.f;
- root.querySelectorAll('[data-rf]').forEach(el=>{f[el.dataset.rf]=/^(pw|pass|spw|upass)$/.test(el.dataset.rf)?el.value:el.value.trim()});
+ root.querySelectorAll('[data-rf]').forEach(el=>{f[el.dataset.rf]=/^(pw|pass|spw|upass|rpw|np|np2)$/.test(el.dataset.rf)?el.value:el.value.trim()});
  REG.err='';REG.note='';AUTH.err='';
  if(a==='openpp'){openPP();return}
  if(a==='photo')return;
@@ -174,17 +183,36 @@ async function regAct(x){const a=x.dataset.ra,root=x.getRootNode(),f=REG.f;
    else{await D.begin({channel:to,phone:f.phone,email:f.email,password:f.pw});REG.ch=to;REG.sent=Date.now();REG.tries=0;REG.needEmail=false;REG.note='Code sent by '+(to==='sms'?'SMS':'email')+'.'}}
   else if(a==='back'){REG.step='form'}
   else if(a==='verify'){if(REG.tries>=5)REG.err='Too many wrong attempts. Request a new code.';else{let u;try{u=await D.verify({channel:REG.ch,phone:f.phone,email:f.email,password:f.pw},f.code||'',REG.anon)}catch(e){REG.tries++;REG.err=(e.message||'Wrong code')+' ('+(5-REG.tries)+' attempts left)'}
-    if(u){await D.initKeys(u.id,f.pass,null);await D.createProfile({id:u.id,username:f.user.toLowerCase(),name:f.name,phone:D.e164(f.phone),email:f.email||null,pubkey:D.ident.pub});['pw','pass','code'].forEach(k=>delete f[k]);REG.step='contacts';await boot()}}}
-  else if(a==='signin'){await D.signIn({id:f.sid||'',password:f.spw||''});delete f.spw;REG.step='done';await boot()}
+    if(u){try{await D.createProfile({id:u.id,username:f.user.toLowerCase(),name:f.name,phone:D.e164(f.phone)||null,email:f.email||null,pubkey:null});['pw','pass','code'].forEach(k=>delete f[k]);REG.step='contacts'}catch(e){REG.err='Your code was accepted, but your profile could not be saved: '+((e&&e.message)||'unknown error')+'. Please finish below.';REG.step='form'}await boot()}}}
+  else if(a==='forgotstart'){REG.mode='forgot';REG.step='form'}
+  else if(a==='tosignin'){REG.mode='signin';REG.step='form'}
+  else if(a==='forgotback'){REG.step='form'}
+  else if(a==='sendreset'){const id=(f.rid||'').trim();
+   if(id.includes('@')){if(!EMRE.test(id))REG.err='Enter a valid email address.';else{await D.resetEmail(id);REG.rkind='email';REG.remail=id;REG.step='code';f.rcode=''}}
+   else if(CFG.accountFunction&&/^[a-zA-Z0-9_]{3,20}$/.test(id)){await D.fn({action:'recover',username:id.toLowerCase()});REG.rkind='user';REG.ruser=id.toLowerCase();REG.step='code';f.rcode=''}
+   else REG.err=CFG.accountFunction?'Enter your email address or username.':'Enter the email address you signed up with.'}
+  else if(a==='doreset'){if((f.rpw||'').length<8)REG.err='Password needs at least 8 characters.';else if(!/^\d{6}$/.test(f.rcode||''))REG.err='Enter the 6-digit code from the email.';
+   else{if(REG.rkind==='email'){await D.recoverVerify(REG.remail,f.rcode);await D.setPassword(f.rpw)}else{const t=await D.fn({action:'reset',username:REG.ruser,token:f.rcode,password:f.rpw});await D.setSession(t)}
+    delete f.rpw;delete f.rcode;REG.mode='signin';REG.step='done';await switchedAccount()}}
+  else if(a==='signin'){const id=(f.sid||'').trim(),isMail=id.includes('@'),isPhone=/^[+\d][\d\s-]{7,}$/.test(id);
+   if(!id||!f.spw)REG.err='Enter your sign-in details and password.';
+   else if(isMail||isPhone){await D.signIn({id,password:f.spw});delete f.spw;REG.step='done';await switchedAccount()}
+   else if(CFG.accountFunction){const t=await D.fn({action:'login',username:id.toLowerCase(),password:f.spw});await D.setSession(t);delete f.spw;REG.step='done';await switchedAccount()}
+   else REG.err='Sign in with the email or phone number you registered with.'}
+  else if(a==='mkkeys'){if((f.np||'').length<8)REG.err='Passphrase needs at least 8 characters.';else if(f.np!==f.np2)REG.err='The two passphrases do not match.';else{AUTH.pass=f.np;delete f.np;delete f.np2;await boot();toast('Your messages are now end-to-end encrypted')}}
+  else if(a==='gopass'){REG.step='resetpass'}
+  else if(a==='passback'){REG.step='form'}
+  else if(a==='dopass'){if((f.np||'').length<8)REG.err='Passphrase needs at least 8 characters.';else{await D.resetIdentity(ME,f.np);delete f.np;AUTH.pass=null;REG.step='done';await boot();toast('New message key created. Chats unlock as other members come online.')}}
   else if(a==='unlock'){AUTH.pass=f.upass;delete f.upass;await boot()}
-  else if(a==='setup'){if(!f.name||!/^[a-zA-Z0-9_]{3,20}$/.test(f.user||'')||(f.pass||'').length<8)REG.err='Enter your name, a username and a passphrase of 8+ characters.';
-   else if(!(await D.available(f.user.toLowerCase())))REG.err='That username is taken.';
-   else{const u=AUTH.user;await D.initKeys(u.id,f.pass,null);await D.createProfile({id:u.id,username:f.user.toLowerCase(),name:f.name,phone:D.e164(u.phone||''),email:u.email||null,pubkey:D.ident.pub});delete f.pass;REG.step='contacts';await boot()}}
+  else if(a==='setup'){const u=AUTH.user,ph=D.e164(u.phone||f.phone||''),em=u.email||f.email||'';
+   const bad=!f.name||f.name.length>80?'Enter your full name.':!/^[a-zA-Z0-9_]{3,20}$/.test(f.user||'')?'Username: 3 to 20 letters, numbers or underscore.':(ph.length<9||ph.length>15)?'Enter a valid phone number.':(em&&!EMRE.test(em))?'Enter a valid email address.':(f.pw||'').length<8?'Password needs at least 8 characters.':'';
+   if(bad)REG.err=bad;else if(!(await D.available(f.user.toLowerCase())))REG.err='That username is taken.';
+   else{const r=await D.sb.auth.updateUser({password:f.pw});if(r.error)throw r.error;await D.createProfile({id:u.id,username:f.user.toLowerCase(),name:f.name,phone:ph,email:em||null,pubkey:null});['pw','pass'].forEach(k=>delete f[k]);REG.step='contacts';await boot()}}
   else if(a==='allow'){await askContacts();REG.step='done'}
   else if(a==='skip')REG.step='done';
   else if(a==='rmct'){CT=null;CTM=[];CTSRC=''}
   else if(a==='rmphoto'){await D.removeAvatar('user',ME,MEP.avatar_path);MEP.avatar_path=null;USERS[ME].avatar_path=null}
-  else if(a==='signout'){await D.signOut(ME);location.reload();return}
+  else if(a==='signout'){await signOutNow();return}
  }catch(e){REG.err=(e&&e.message)||'Something went wrong. Please try again.'}
  REG.busy=false;drawReg();draw()}
 async function setPhoto(kind,id,file){try{const b=await D.imageToAvatar(file),c=kind==='group'?conv(id):null,old=kind==='user'?MEP.avatar_path:c.avatar,p=await D.uploadAvatar(kind,id,b,old);
@@ -195,7 +223,8 @@ function wire(sr){sr.addEventListener('click',e=>{const x=e.target.closest('[dat
 wire(SR);
 /* ---------------- views ---------------- */
 const top2=(t,sub,back)=>`<div class="top h2"><button class="bk" data-pa="${back||'back'}" aria-label="Back">${ic('back',24)}</button><div class="tt"><b>${t}</b>${sub?`<small>${sub}</small>`:''}</div><button class="cb" data-pa="close" aria-label="Close">${ic('close')}</button></div>`;
-function noAcct(){return `<div class="top"><button class="cb" data-pa="close" aria-label="Close">${ic('close')}</button></div><h1 class="ttl">Chats</h1><div class="bd"><div class="cd">${AUTH.state==='locked'?`<div data-rm="1">${regHtml()}</div>`:`<h4>Create your account in Profile</h4><p class="mu">Your D&K account is created once, in the Profile page, to avoid double registration. You verify your phone with an SMS code, choose a message passphrase for end-to-end encryption, and can optionally allow contacts to find friends.</p><button class="pb" data-pa="gotoprof">Go to Profile</button>`}</div></div>`}
+function noAcct(){const st=AUTH.state,gate=st==='locked'||st==='nokeys';
+ return `<div class="top"><button class="cb" data-pa="close" aria-label="Close">${ic('close')}</button></div><h1 class="ttl">Chats</h1><div class="bd"><div class="cd">${gate?`<div data-rm="1">${regHtml('planner')}</div>`:`<h4>${st==='setup'?'Finish your profile':'Create your account in Profile'}</h4><p class="mu">Your D&K account is created once, in the Profile page, to avoid double registration. You verify your email, and can optionally allow contacts to find friends. The first time you open Chats you choose a message passphrase to protect your conversations.</p><button class="pb" data-pa="gotoprof">Go to Profile</button>`}</div></div>`}
 function pv(c){const l=c.msgs[c.msgs.length-1];if(!l)return '<span class="mu">No messages yet</span>';let t;
  if(l.type==='sys')t=sysText(l);else if(l.del)t='Message deleted';else if(l.type==='prod')t='Product: '+((c.items.find(i=>i.id===l.payload.item)||{}).name||'');else if(l.type==='share')t='Product: '+((P(l.payload.pid)||{}).name||'');
  else if(l.type==='poll')t=(PK[l.payload.pk]||['','Plan'])[1]+' proposal';else t=l.ok?l.t:'Encrypted message';
