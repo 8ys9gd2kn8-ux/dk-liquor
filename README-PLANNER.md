@@ -24,7 +24,7 @@ Note: `index.html` and `admin.html` reference `orbit.js`, which was not in the z
 2. **Email verification (works today, no SMS needed).** Supabase > Authentication:
    - Providers > **Email**: enable it and turn on **Confirm email**.
    - **SMTP Settings**: enable **Custom SMTP** and connect an email sender (for example Resend, SendGrid, Mailgun or Postmark; check each one's free tier and verify your domain with its SPF/DKIM records). Supabase's built-in email service is only for testing and allows just a handful of emails per hour for the whole project, so real sign-ups will fail without this.
-   - **Email Templates**: open **Confirm signup** and **Change Email Address** and paste in `supabase-email-template.html`. It must contain `{{ .Token }}`, which is the 6-digit code the app asks for (the default templates send a link instead, which this app does not use).
+   - **Email Templates**: open **Confirm signup**, **Change Email Address** and **Reset Password** and paste in `supabase-email-template.html` (change the subject of the reset one to "Your D&K password reset code"). It must contain `{{ .Token }}`, which is the 6-digit code the app asks for (the default templates send a link instead, which this app does not use).
    - Authentication > Providers > Email: set the OTP expiry to 600 seconds or less.
    Sign-up is **email first**. Phone numbers are collected as the contact point but stay "not verified", so the contact-suggestion feature only lists friends whose phone has been verified by SMS.
 2b. **Later: turn on SMS.** When an SMS provider works for Uganda (a registered sender name is needed on MTN and Airtel; see the notes we discussed, or use Africa's Talking through a Supabase *Send SMS hook*), enable Authentication > Providers > Phone, then edit `planner/pp-config.js` and set `smsEnabled:true` (and `primaryVerify:'sms'` if you want SMS first). Nothing else changes.
@@ -36,7 +36,7 @@ Note: `index.html` and `admin.html` reference `orbit.js`, which was not in the z
 
 ## How user information and conversations are protected
 **Message text is end-to-end encrypted.** The database, Supabase staff and D&K administrators only ever see ciphertext.
-- Each user has an ECDH P-256 key pair made on their own device. The private key is stored non-extractable in the browser and backed up only in encrypted form (PBKDF2, 310,000 rounds + AES-GCM) under a **message passphrase** that is never sent to the server.
+- Each user has an ECDH P-256 key pair made on their own device. The private key is stored non-extractable in the browser and backed up only in encrypted form (PBKDF2, 310,000 rounds + AES-GCM) under a **message passphrase** (chosen inside the Planner) that is never sent to the server.
 - Each conversation has its own AES-256-GCM key, wrapped separately for each member. Messages bind the chat id and sender id as authenticated data, so they cannot be moved between chats.
 - Removing a member rotates the conversation key, so they cannot read new messages.
 - **Contact info > Encryption** shows a fingerprint. Compare it in person or by phone call to confirm nobody is intercepting your chat.
@@ -56,6 +56,25 @@ Note: `index.html` and `admin.html` reference `orbit.js`, which was not in the z
 **Profile pictures** are re-encoded to a 256 px JPEG in the browser (this removes EXIF and GPS data), stored in a private bucket and shown through short-lived signed URLs. Only people who share a chat with you can view your photo. Without a photo, initials are shown.
 
 **Browser hardening.** `index.html` now has a Content-Security-Policy that allows scripts only from your own site plus the Supabase library, and connections only to your Supabase project. For extra safety, host `supabase.min.js` yourself or add a Subresource Integrity hash.
+
+
+## Forgotten details: what each person can do
+| They forgot | What to do |
+|---|---|
+| Password | Sign in screen > **Forgot password?** > enter their email (or username, once the optional function below is deployed) > enter the 6-digit code from the email > choose a new password. |
+| Username | Sign in with email or phone instead. The username is shown on their profile. |
+| Email | Sign in with username + password (needs the function below) or with their phone number. |
+| Message passphrase | In the Planner, **Forgot passphrase?** creates a new encryption key. Their chats become readable again as soon as another member of each chat opens the app and shares the chat key with them. Those members see "security code changed", so they can confirm it really was them. |
+
+Where things live: **Profile page = registration and sign-in only** (name, username, email, phone, password). The message passphrase and key fingerprint are handled **inside the Planner** the first time someone opens it, never on the Profile page. Signing out removes the key from that device, so the next sign-in asks for the passphrase.
+
+### Optional: sign in and reset by username (`supabase/functions/pp-account`)
+Supabase can only sign in with an email or phone, so a username needs a small server function that looks up the email without ever exposing it to the browser.
+1. Supabase > **Edge Functions** > create a new function named exactly `pp-account` (editor option), paste in `supabase/functions/pp-account/index.ts`, deploy. The service key it needs is provided to functions automatically.
+2. Edit `planner/pp-config.js` and set `accountFunction:true`.
+3. It limits attempts per username and gives the same answer whether or not a username exists. Test it with a staging account first.
+
+**Trade-off to know:** anyone who controls a person's email AND password can use "Forgot passphrase" to get a new key, and other members' apps will then re-share the chat key with it (they are warned by the "security code changed" notice). Protect email accounts with 2-step verification, and compare fingerprints (Contact info) for sensitive chats.
 
 ## Honest limits (please read)
 - **Not encrypted:** group names, group photos, event data (poll options, shopping list, budget, activity log) and message timing. These are protected by access control, not E2EE. Phone numbers are visible to people you chat with (that is the "contact point").
