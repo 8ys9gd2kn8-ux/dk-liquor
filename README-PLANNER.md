@@ -9,6 +9,10 @@ to the existing D&K shop. It is wired into the same Supabase project and the sam
 | `supabase-planner.sql` | **Run once** in Supabase SQL Editor. Tables, Row Level Security, RPC functions, private avatar bucket, realtime. |
 | `planner/pp-crypto.js` | End-to-end encryption (Web Crypto only, no third-party code). |
 | `planner/pp-data.js` | Supabase queries, auth, key management, avatar upload. |
+| `sw.js` | Service worker for closed-app alerts (push only, caches nothing). Goes in the site root. |
+| `supabase-planner-push.sql` | Optional: table + functions for closed-app alerts. |
+| `supabase/functions/pp-push/` | Optional: server function that sends the alerts. |
+| `tools/vapid-keygen.html` | Run on your own computer to make the alert keys. Never upload it. |
 | `planner/pp-config.js` | Switch SMS verification on or off (`smsEnabled`). |
 | `supabase-email-template.html` | Ready-made email for the 6-digit verification code. |
 | `planner/pp-css.js` | Styles (inside a Shadow DOM, cannot clash with the shop). |
@@ -57,6 +61,25 @@ Note: `index.html` and `admin.html` reference `orbit.js`, which was not in the z
 
 **Browser hardening.** `index.html` now has a Content-Security-Policy that allows scripts only from your own site plus the Supabase library, and connections only to your Supabase project. For extra safety, host `supabase.min.js` yourself or add a Subresource Integrity hash.
 
+
+## Notifications (new message alerts)
+**Works as soon as you upload the files (no setup):**
+- A banner slides in at the top of the shop when a message arrives, with a short sound. Tap it to open the chat.
+- A red count badge on the Planner button and in the browser tab title.
+- Browser/system alerts when the tab is in the background (the person taps **Alerts on this device** in Chats > their profile picture).
+- A muted chat stays quiet, except when someone @mentions you.
+- **Privacy:** alerts say only "New message" by default. The text appears only if the person turns on **Show message text in alerts** (off keeps text off lock screens).
+
+**Alerts when the app is closed (optional, needs a one-time setup).** Phones only show these if the app sends "web push" from a server. Because messages are end-to-end encrypted, these alerts say who/which chat only, never the text.
+1. On your computer open `tools/vapid-keygen.html` (double-click) and click **Generate keys**. Keep the private key secret and do not upload this file.
+2. Supabase > SQL Editor: run `supabase-planner-push.sql`.
+3. Supabase > Edge Functions > Secrets: add `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (for example `mailto:you@yourdomain.com`).
+4. Supabase > Edge Functions: create a function named `pp-push` (editor option), paste in `supabase/functions/pp-push/index.ts`, deploy.
+5. Supabase > Database > Webhooks: create a webhook on table `pp_messages`, event **Insert**, type **Supabase Edge Functions**, function `pp-push`, method POST. Add the service-key auth header option the form offers.
+6. Put the public key in `planner/pp-config.js` as `vapidPublicKey`, and upload `sw.js` to the **root** of your repository (next to `index.html`).
+7. In the app: Chats > profile picture > Notifications > **Alerts when the app is closed**.
+On iPhone, recent iOS versions only allow web push for apps added to the Home Screen first (Share > Add to Home Screen).
+**Not tested here:** real push delivery and `npm:web-push` inside a Supabase Edge Function. Test with your own phone first. Muting is respected by the server, but an @mention cannot break through a mute while the app is closed (the server cannot read the text).
 
 ## Forgotten details: what each person can do
 | They forgot | What to do |

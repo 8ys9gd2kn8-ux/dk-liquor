@@ -31,11 +31,11 @@ async function botKey(b,cid,ver){if(b.keys[cid]&&b.keys[cid][ver])return b.keys[
 function botSay(b,cid,text,delay){setTimeout(async()=>{const cv=T.pp_conversations.find(c=>c.id===cid);if(!cv)return;const k=await botKey(b,cid,cv.key_version);if(!k)return;
  const e=await C.enc(k,{t:text},cid+':'+b.id),row={id:uuid(),conversation_id:cid,sender_id:b.id,kind:'text',ciphertext:e.ciphertext,iv:e.iv,key_version:cv.key_version,payload:{},reactions:{},deleted_at:null,created_at:iso()};T.pp_messages.push(row);notify('pp_messages','INSERT',row)},delay)}
 function botVote(b,cid,type,id,delay){setTimeout(()=>{const row={conversation_id:cid,target_type:type,target_id:id,user_id:b.id,value:1};T.pp_votes.push(row);notify('pp_votes','INSERT',row)},delay)}
-const greeted=new Set(),SEEDED=new Set();window.__DK_DEBUG_DB=T;
+const greeted=new Set(),SEEDED=new Set(),SEEDEDU=new Set();window.__DK_DEBUG_DB=T;
 function after(t,row){const u=me();
  if(t==='pp_messages'&&row.kind==='text'&&row.sender_id===u){const cv=T.pp_conversations.find(c=>c.id===row.conversation_id),bs=botsIn(row.conversation_id);if(!cv||!bs.length)return;
   if(cv.type==='dm'){botSay(bs[0],cv.id,['Okay','Sounds good!','Let me check and get back to you','Haha yes!','Perfect, thanks'][Math.floor(Math.random()*5)],1400)}
-  else bs.forEach(async b=>{const k=await C.dec(await botKey(b,cv.id,row.key_version),row.ciphertext,row.iv,cv.id+':'+u).catch(()=>null);if(k&&k.t&&k.t.toLowerCase().includes('@'+b.un))botSay(b,cv.id,'Seen, thanks',1200)})}
+  else bs.forEach(async b=>{const k=await C.dec(await botKey(b,cv.id,row.key_version),row.ciphertext,row.iv,cv.id+':'+u).catch(()=>null);if(k&&k.t&&k.t.toLowerCase().includes('@'+b.un))botSay(b,cv.id,'Seen, thanks @'+((T.pp_profiles.find(p=>p.id===u)||{}).username||''),1200)})}
  if(t==='pp_items'&&row.created_by===u){const bs=botsIn(row.conversation_id);if(bs[0]){botVote(bs[0],row.conversation_id,'item',row.id,1500);botSay(bs[0],row.conversation_id,'Good pick',1700)}}
  if(t==='pp_plan_options'&&row.proposed_by===u){const bs=botsIn(row.conversation_id);if(bs[0])botVote(bs[0],row.conversation_id,'option',row.id,1500)}
  if(t==='pp_member_keys'&&bot(row.user_id)&&!SEEDED.has(row.conversation_id)&&!greeted.has(row.conversation_id+row.user_id)){greeted.add(row.conversation_id+row.user_id);botSay(bot(row.user_id),row.conversation_id,'Hi everyone, thanks for adding me',1300)}}
@@ -75,6 +75,7 @@ function qb(table){const st={op:'select',f:[],ord:null,lim:null,single:null,pl:n
   if(st.op==='insert'||st.op==='upsert'){const out=[];for(const raw of [].concat(st.pl)){const row=Object.assign({},raw);
     if(!row.id&&!(table in PK)&&table!=='pp_activity')row.id=uuid();if(!row.created_at&&table!=='pp_key_backups')row.created_at=iso();
     if(table==='pp_activity')row.id=T.pp_activity.length+1000;
+    if(table==='pp_profiles'&&window.__DK_FAIL_PROFILE){window.__DK_FAIL_PROFILE=0;return err('new row for relation "pp_profiles" violates check constraint "pp_profiles_phone_check"')}
     if(table==='pp_profiles'){if(row.id!==u)return err('RLS: not your profile');if(rows.some(r=>r.username===String(row.username).toLowerCase()))return err('duplicate key value violates unique constraint');row.username=row.username.toLowerCase();
      const au=AU.find(a=>a.id===u);row.phone_verified=!!(au&&au.phone_ok&&dg(au.phone)===row.phone);row.phone_hash=row.phone?await C.sha256hex('dk-pp-v1:'+row.phone):null;row.avatar_path=null}
     if(table==='pp_messages'){if(row.sender_id!==u||!T.pp_members.some(m=>m.conversation_id===row.conversation_id&&m.user_id===u))return err('RLS: cannot post here');const cv=T.pp_conversations.find(c=>c.id===row.conversation_id);if(cv.admin_only&&!isAdm(cv.id))return err('Only admins can send messages');Object.assign(row,{reactions:{},deleted_at:null,payload:row.payload||{}})}
@@ -85,12 +86,12 @@ function qb(table){const st={op:'select',f:[],ord:null,lim:null,single:null,pl:n
     if(table==='pp_invites'){if(!isAdm(row.conversation_id))return err('RLS: admins only');Object.assign(row,{used_by:null,expires_at:iso(Date.now()+7*864e5)})}
     const k=PK[table];const ex=k&&rows.find(r=>k.every(c=>r[c]===row[c]));
     if(ex){if(st.op==='insert')return err('duplicate key');Object.assign(ex,row);out.push(ex);notify(table,'UPDATE',ex);continue}
-    rows.push(row);out.push(row);notify(table,'INSERT',row);if(table==='pp_profiles'&&!bot(row.id))await seedFor(row);after(table,row)}
+    rows.push(row);out.push(row);notify(table,'INSERT',row);after(table,row)}
    return {data:st.single?out[0]:out,error:null}}
   if(st.op==='update'){const t=rows.filter(x=>visible(table,x)&&flt(x));
    for(const r of t){if(table==='pp_conversations'&&!isAdm(r.id))return err('RLS: admins only');if(table==='pp_plan_options'&&!isAdm(r.conversation_id))return err('RLS: admins only');
     if(table==='pp_items'&&st.pl.status&&st.pl.status!==r.status&&!isAdm(r.conversation_id))return err('Only admins can change item status');
-    if(table==='pp_members'&&r.user_id!==u)return err('RLS');Object.assign(r,st.pl);notify(table,'UPDATE',r)}return {data:t,error:null}}
+    if(table==='pp_members'&&r.user_id!==u)return err('RLS');Object.assign(r,st.pl);notify(table,'UPDATE',r);if(table==='pp_profiles'&&st.pl.pubkey){if(SEEDEDU.has(r.id))await reshare(r.id);else{SEEDEDU.add(r.id);await seedFor(r)}}}return {data:t,error:null}}
   if(st.op==='delete'){const t=rows.filter(x=>visible(table,x)&&flt(x));for(const r of t){if(table==='pp_members'&&(!isAdm(r.conversation_id)||r.role==='organiser'))return err('RLS: not allowed');if(table==='pp_votes'&&r.user_id!==u)return err('RLS');rows.splice(rows.indexOf(r),1);notify(table,'DELETE',null,r)}return {data:t,error:null}}};
  const b={select(){if(st.op!=='select')st.ret=true;return b},eq(k,v){st.f.push(r=>r[k]===v);return b},in(k,a){st.f.push(r=>a.includes(r[k]));return b},neq(k,v){st.f.push(r=>r[k]!==v);return b},
   order(k,o){st.ord=[k,!(o&&o.ascending===false)];return b},limit(n){st.lim=n;return b},single(){st.single='one';return b},maybeSingle(){st.single='maybe';return b},
@@ -109,6 +110,7 @@ const RPC={
   T.pp_members.splice(T.pp_members.indexOf(mine),1);if(!T.pp_members.some(m=>m.conversation_id===p_cid))T.pp_conversations.splice(T.pp_conversations.findIndex(c=>c.id===p_cid),1);return {data:null,error:null}},
  async pp_react({p_mid,p_emoji}){const m=T.pp_messages.find(x=>x.id===p_mid);if(!m||!visible('pp_messages',m))return err('not allowed');m.reactions=Object.assign({},m.reactions);if(m.reactions[me()]===p_emoji)delete m.reactions[me()];else m.reactions[me()]=p_emoji;notify('pp_messages','UPDATE',m);return {data:null,error:null}},
  async pp_delete_message({p_mid}){const m=T.pp_messages.find(x=>x.id===p_mid&&x.sender_id===me());if(m){m.deleted_at=iso();m.ciphertext=null;m.iv=null;m.payload={};notify('pp_messages','UPDATE',m)}return {data:null,error:null}},
+ async pp_save_push(){return {data:null,error:null}},async pp_drop_push(){return {data:null,error:null}},
  async pp_accept_invite({p_token}){const h=await C.sha256hex(p_token),inv=T.pp_invites.find(i=>i.token_hash===h&&!i.used_by&&Date.parse(i.expires_at)>Date.now());if(!inv)return err('This invitation link is invalid or has expired');
   if(!T.pp_members.some(m=>m.conversation_id===inv.conversation_id&&m.user_id===me())){const row={conversation_id:inv.conversation_id,user_id:me(),role:'member',muted:false,last_read_at:iso(),joined_at:iso()};T.pp_members.push(row);notify('pp_members','INSERT',row)}inv.used_by=me();return {data:inv.conversation_id,error:null}}};
 /* ---------- auth + OTP ---------- */
@@ -124,14 +126,26 @@ const auth={
  async verifyOtp(a){if(!PEND||String(a.token)!==PEND.code||PEND.kind!==a.type)return err('Invalid or expired code');const u=PEND.user;
   if(a.phone){u.phone=PEND.target;u.phone_ok=true}else{u.email=PEND.target;u.email_ok=true}u.is_anonymous=false;CUR=u;PEND=null;window.__DK_OTP=null;return {data:{user:pub(u),session:{user:pub(u)}},error:null}},
  async signInWithPassword(a){const u=AU.find(x=>!x.is_anonymous&&x.password===a.password&&((a.email&&x.email===a.email)||(a.phone&&x.phone===a.phone)));if(!u)return err('Invalid login credentials');CUR=u;return {data:{user:pub(u),session:{user:pub(u)}},error:null}},
- async signOut(){CUR=null;return {error:null}}};
+ async signOut(){CUR=null;return {error:null}},
+ async resetPasswordForEmail(email){const u=AU.find(x=>x.email===email&&x.email_ok);if(u){PEND={user:u,kind:'recovery',target:email,code:otp()};window.__DK_OTP=()=>({dest:email,code:PEND&&PEND.code})}return {data:{},error:null}},
+ async setSession(){CUR=LAST;return {data:{session:{user:pub(CUR)}},error:null}}};
+let LAST=null;
+const userByName=un=>{const p=T.pp_profiles.find(x=>x.username===String(un).toLowerCase());return p&&AU.find(a=>a.id===p.id)};
+const functions={async invoke(n,{body}){const b=body||{},u=userByName(b.username),E=mm=>({data:null,error:{message:mm,context:{json:async()=>({error:mm})}}});
+ if(b.action==='login'){if(!u||u.password!==b.password)return E('Wrong username or password');LAST=u;return {data:{access_token:'m',refresh_token:'m'},error:null}}
+ if(b.action==='recover'){if(u&&u.email){PEND={user:u,kind:'recovery',target:u.email,code:otp()};window.__DK_OTP=()=>({dest:u.email,code:PEND&&PEND.code})}return {data:{ok:true},error:null}}
+ if(b.action==='reset'){if(!u||!PEND||PEND.user!==u||String(b.token)!==PEND.code)return E('Invalid or expired code');u.password=b.password;PEND=null;LAST=u;return {data:{access_token:'m',refresh_token:'m'},error:null}}
+ return E('Unknown action')}};
+async function reshare(uid){const pr=T.pp_profiles.find(p=>p.id===uid);for(const mm of T.pp_members.filter(x=>x.user_id===uid)){const cv=T.pp_conversations.find(c=>c.id===mm.conversation_id),b=cv&&botsIn(cv.id)[0];if(!b)continue;const k=await botKey(b,cv.id,cv.key_version);if(!k)continue;
+ const row={conversation_id:cv.id,user_id:uid,version:cv.key_version,wrapped_key:await C.wrap(k,b.priv,pr.pubkey),wrapped_by:b.id,recipient_fp:await C.fingerprint(pr.pubkey),created_at:iso()};
+ const i=T.pp_member_keys.findIndex(x=>x.conversation_id===cv.id&&x.user_id===uid&&x.version===cv.key_version);if(i>=0)T.pp_member_keys[i]=row;else T.pp_member_keys.push(row);notify('pp_member_keys','INSERT',row)}}
 /* ---------- storage (avatars) ---------- */
 const FILES={};
 const storage={from(){return {
  async upload(path,blob){if(!me())return err('not signed in');const url=await new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result);f.readAsDataURL(blob)});FILES[path]=url;return {data:{path},error:null}},
  async createSignedUrl(path){return FILES[path]?{data:{signedUrl:FILES[path]},error:null}:err('not found')},
  async remove(paths){paths.forEach(p=>delete FILES[p]);return {data:null,error:null}}}}};
-const sb={from:t=>/^pp_/.test(t)?qb(t):shop.from(t),rpc:async(n,a)=>RPC[n]?RPC[n](a||{}):err('unknown rpc'),storage,auth,
+const sb={functions,from:t=>/^pp_/.test(t)?qb(t):shop.from(t),rpc:async(n,a)=>RPC[n]?RPC[n](a||{}):err('unknown rpc'),storage,auth,
  channel(n){const s=shop.channel(n),mine=[];const ch={on(a,o,cb){if(o&&/^pp_/.test(o.table||''))mine.push({table:o.table,cb});else s.on(a,o,cb);return ch},subscribe(){s.subscribe();mine.forEach(x=>subs.push(x));return ch},_s:s,_m:mine};return ch},
  removeChannel(ch){try{shop.removeChannel(ch._s)}catch(e){}subs=subs.filter(x=>!ch._m.includes(x))}};
 window.supabase={createClient:()=>sb};
