@@ -60,7 +60,7 @@ async function toMsg(row){const x={id:row.id,who:row.sender_id,type:row.kind,ts:
  if((row.kind==='text'||row.kind==='sys')&&!x.del){let o=DECC.get(row.id);if(!o){o=await D.decrypt(row);if(o)DECC.set(row.id,o)}
   if(o){if(row.kind==='text'){x.t=o.t;x.reply=o.reply||null}else x.sys=o}else x.ok=false}
  return x}
-async function buildConv(r,d,prev){
+async function buildConv(r,d,prev,light){
  const mem=d.members.filter(m=>m.conversation_id===r.id),c={id:r.id,type:r.type,name:r.name,cat:r.category,guests:r.guests,budget:+r.budget,avatar:r.avatar_path,adminOnly:r.admin_only,keyVer:r.key_version,created:Date.parse(r.created_at),
   members:mem.map(m=>({u:m.user_id,r:m.role,muted:m.muted,lastRead:Date.parse(m.last_read_at)})),items:[],plan:{date:{opts:[],final:null},time:{opts:[],final:null},venue:{opts:[],final:null}},log:[],pend:[],msgs:[],unread:0};
  const myM=c.members.find(m=>m.u===ME);c.muted=!!(myM&&myM.muted);
@@ -72,18 +72,21 @@ async function buildConv(r,d,prev){
  c.items.forEach(it=>{if(it.status==='Suggested'&&Object.keys(it.votes).length)it.status='Under discussion'});
  c.pend=d.invs.filter(i=>i.conversation_id===r.id&&!i.used_by&&Date.parse(i.expires_at)>Date.now()).map(i=>({id:i.id,label:i.label||'Invited person'}));
  const prevMsgs=new Map(((prev&&prev.msgs)||[]).map(x=>[x.id,x]));
- for(const row of d.msgs.filter(x=>x.conversation_id===r.id)){const old=prevMsgs.get(row.id);c.msgs.push(old&&old.ok&&!row.deleted_at&&old.del===false&&!old.pending?Object.assign(old,{re:row.reactions||{}}):await toMsg(row))}
+ if(light&&prev)c.msgs=prev.msgs;else for(const row of d.msgs.filter(x=>x.conversation_id===r.id)){const old=prevMsgs.get(row.id);c.msgs.push(old&&old.ok&&!row.deleted_at&&old.del===false&&!old.pending?Object.assign(old,{re:row.reactions||{}}):await toMsg(row))}
  if(prev)prev.msgs.filter(x=>x.pending&&!c.msgs.some(y=>y.id===x.id)).forEach(x=>c.msgs.push(x));
  const lr=myM?myM.lastRead:0;c.unread=c.msgs.filter(x=>x.ts>lr&&x.who!==ME&&x.type!=='sys').length;
  if(PP.open&&PP.view==='chat'&&PP.cid===c.id)c.unread=0;
  return c}
-async function loadState(){if(AUTH.state!=='in')return;
- try{const d=await D.loadAll(ME);await D.loadKeys(ME,USERS);MEP=USERS[ME]||MEP;
-  const old=new Map(CONVS.map(c=>[c.id,c]));CONVS=await Promise.all(d.convs.map(r=>buildConv(r,d,old.get(r.id))));
+let lastSync=Date.now();
+async function loadState(light){if(AUTH.state!=='in')return;
+ try{const old=new Map(CONVS.map(c=>[c.id,c]));let d=await D.loadAll(ME,{light:!!light});
+  if(light&&d.convs.some(r=>!old.has(r.id))){light=false;d=await D.loadAll(ME)}   /* a brand-new chat needs its messages too */
+  await D.loadKeys(ME,USERS);MEP=USERS[ME]||MEP;
+  CONVS=await Promise.all(d.convs.map(r=>buildConv(r,d,old.get(r.id),light)));lastSync=Date.now();
   CONVS.filter(c=>isAd(c)&&D.latest(c.id)>=c.keyVer).forEach(ensureKeys);draw()}catch(e){console.error(e);toast('Could not refresh. Check your connection.')}}
 const ENS={};
 async function ensureKeys(c){if(ENS[c.id]&&Date.now()-ENS[c.id]<20000)return;ENS[c.id]=Date.now();try{await D.loadProfiles(c.members.map(m=>m.u));const r=await D.ensureKeys(c.id,c.keyVer,c.members.map(m=>m.u),USERS,ME);for(const id of r.changed||[])sysMsg(c,{k:'keychanged',id})}catch(e){console.warn('key share',e)}}
-function schedule(){clearTimeout(tmr);tmr=setTimeout(loadState,350)}
+function schedule(full){clearTimeout(tmr);tmr=setTimeout(()=>loadState(!full),full?350:600)}
 async function onRT(table,p){
  if(table==='pp_messages'&&p.eventType==='INSERT'&&p.new){let c=conv(p.new.conversation_id);
   if(!c){await loadState();c=conv(p.new.conversation_id);const nx=c&&c.msgs.find(z=>z.id===p.new.id);if(nx)notifyIncoming(c,nx);return}
@@ -91,6 +94,10 @@ async function onRT(table,p){
   const watching=PP.open&&PP.view==='chat'&&PP.cid===c.id&&document.visibilityState==='visible';
   if(watching)markRead(c);else if(x.who!==ME&&x.type!=='sys')c.unread++;
   notifyIncoming(c,x);draw();return}
+ if(table==='pp_messages'&&p.eventType==='UPDATE'&&p.new){const c=conv(p.new.conversation_id),x=c&&c.msgs.find(z=>z.id===p.new.id);if(x){x.re=p.new.reactions||{};if(p.new.deleted_at){x.del=true;x.t=''}draw()}return}
+ if(table==='pp_members'&&p.eventType==='UPDATE'&&p.new){const c=conv(p.new.conversation_id),mm=c&&c.members.find(z=>z.u===p.new.user_id);   /* read markers and mute flags are applied in place: no reload */
+  if(mm&&mm.r===p.new.role){mm.muted=p.new.muted;mm.lastRead=Date.parse(p.new.last_read_at);if(p.new.user_id===ME)c.muted=p.new.muted;return}}
+ if(table==='pp_member_keys'){schedule(true);return}
  schedule()}
 function markRead(c){c.unread=0;D.updMember(c.id,ME,{last_read_at:new Date().toISOString()}).catch(()=>{})}
 /* ---------------- toast + safe remote calls ---------------- */
@@ -106,8 +113,9 @@ const pushOK=()=>!!(CFG.vapidPublicKey&&'serviceWorker' in navigator&&'PushManag
 function openChat(cid){const c=conv(cid);if(!c)return;PP.open=true;PP.view='chat';PP.cid=cid;PP.sheet=null;PP.reply=null;markRead(c);draw()}
 let bnT;function banner(c,x,title,body){const el=g('ppnote');if(!el)return;clearTimeout(bnT);
  el.innerHTML=`<div class="bn" data-pa="banner" data-id="${c.id}">${isDM(c)?avU(x.who,38):avC(c,38)}<div class="sp"><b class="ell">${esc(title)}</b><small>${esc(body)}</small></div></div>`;bnT=setTimeout(()=>{el.innerHTML=''},5500)}
+async function ensureSW(){try{if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost'))return await navigator.serviceWorker.register('sw.js')}catch(e){}return null}
 async function showSys(title,body,cid){const o={body,tag:cid,icon:'dk-icon-192.png',data:{cid}};let reg=null;
- try{reg=('serviceWorker' in navigator)?await navigator.serviceWorker.getRegistration():null}catch(e){}
+ try{if('serviceWorker' in navigator&&await navigator.serviceWorker.getRegistration())reg=await Promise.race([navigator.serviceWorker.ready,new Promise(r=>setTimeout(()=>r(null),1500))])}catch(e){}
  try{if(reg&&reg.showNotification){await reg.showNotification(title,o);return}}catch(e){}
  try{const n=new Notification(title,o);n.onclick=()=>{try{window.focus()}catch(e){}openChat(cid);n.close()}}catch(e){}}
 const mentionsMe=x=>!!(x.t&&MEP&&MEP.username&&new RegExp('@'+MEP.username+'\\b','i').test(x.t));
@@ -128,7 +136,10 @@ async function enablePush(){if(typeof Notification==='undefined')throw new Error
  await D.savePush(sub.toJSON(),navigator.userAgent.slice(0,120));NS.push=true;NS.sys=true;saveNS()}
 async function disablePush(){try{const reg=await navigator.serviceWorker.getRegistration(),sub=reg&&await reg.pushManager.getSubscription();if(sub){await D.dropPush(sub.endpoint).catch(()=>{});await sub.unsubscribe()}}catch(e){}NS.push=false;saveNS()}
 const nrow=(t,on,pa,sub)=>`<div class="ri" data-pa="${pa}"><div class="sp">${t}${sub?`<div class="mu">${sub}</div>`:''}</div><span class="sw ${on?'on':''}"></span></div>`;
-function notifHtml(){const sup=typeof Notification!=='undefined';return `<div class="ntf">Notifications</div><div class="cd2">${nrow('Alerts on this device',NS.sys&&sysOK(),'nsys',sup?'Banner and system alerts for new messages':'Not supported in this browser. On iPhone, add D&K to your Home Screen first.')}${nrow('Sound',NS.sound,'nsound')}${nrow('Show message text in alerts',NS.preview,'nprev','Off keeps message text off your lock screen')}${pushOK()?nrow('Alerts when the app is closed',NS.push,'npush','Sends a "new message" alert only. The server never sees your message text.'):''}</div><div class="mu">Mute a single chat from its info page. Muted chats stay quiet unless you are @mentioned.</div>`}
+const NST={perm:'',sw:'',push:''};
+async function notifStatus(){NST.perm=typeof Notification==='undefined'?'not supported':Notification.permission;let sw='not registered';try{const r='serviceWorker' in navigator&&await navigator.serviceWorker.getRegistration();if(r&&r.active)sw='active'}catch(e){sw='unavailable'}NST.sw=sw;
+ NST.push=!CFG.vapidPublicKey?'not set up (no key in pp-config.js)':!pushOK()?'unavailable here (needs https)':NS.push?'on':'off'}
+function notifHtml(){const sup=typeof Notification!=='undefined';return `<div class="ntf">Notifications</div><div class="cd2">${nrow('Alerts on this device',NS.sys&&sysOK(),'nsys',sup?'Banner and system alerts for new messages':'Not supported in this browser. On iPhone, add D&K to your Home Screen first.')}${nrow('Sound',NS.sound,'nsound')}${nrow('Show message text in alerts',NS.preview,'nprev','Off keeps message text off your lock screen')}${pushOK()?nrow('Alerts when the app is closed',NS.push,'npush','Sends a "new message" alert only. The server never sees your message text.'):''}</div><div class="row" style="margin:8px 0"><button class="gb" data-pa="ntest">Send a test alert</button></div><div class="mu">Status: permission ${esc(NST.perm||'checking')} · service worker ${esc(NST.sw||'checking')} · closed-app alerts ${esc(NST.push||'checking')}</div><div class="mu" style="margin-top:6px">Mute a single chat from its info page. Muted chats stay quiet unless you are @mentioned.</div>`}
 function toast(t){setTimeout(()=>{const r=g('pp');if(!r)return;const el=document.createElement('div');el.className='toast';el.textContent=t;r.appendChild(el);setTimeout(()=>el.remove(),2600)},0)}
 const fail=e=>{console.warn(e);toast((e&&e.message&&e.message.length<90?e.message:'That did not save. Please try again.'));loadState()};
 const act=(local,remote)=>{local();draw();Promise.resolve().then(remote).catch(fail)};
@@ -201,7 +212,7 @@ async function boot(){try{const u=await D.realUser();
   let ks;try{ks=await D.initKeys(ME,AUTH.pass||null,prof)}catch(e){AUTH.pass=null;AUTH.state='locked';AUTH.err=e.message;return}AUTH.pass=null;
   if(ks==='locked'){AUTH.state='locked';return}
   if(ks==='nokeys'){AUTH.state='nokeys';return}
-  AUTH.state='in';await loadState();if(!started){started=true;D.subscribe(onRT)}await afterAuth()}
+  AUTH.state='in';await loadState();if(NS.sys)ensureSW();if(!started){started=true;D.subscribe(onRT)}await afterAuth()}
  catch(e){console.error(e);AUTH.state='out';AUTH.err='Could not reach the server. Please try again.'}finally{draw();drawReg()}}
 /* The shop reads the signed-in user once when the page loads, so after switching accounts the page must reload. */
 async function switchedAccount(){if(window.DK_DEMO){await boot();return}location.reload()}
@@ -381,7 +392,7 @@ SR.addEventListener('click',ev0=>{
  else if(a==='tab'){PP.tab=D_.v;PP.view='panel'}
  else if(a==='itab')PP.itab=D_.v;
  else if(a==='filt')PP.filt=D_.f;
- else if(a==='me'){PP.sheet='me'}
+ else if(a==='me'){PP.sheet='me';notifStatus().then(draw)}
  else if(a==='uphoto'){pickFile(ME,'user');return}
  else if(a==='gphoto'){pickFile(c.id,'group');return}
  else if(a==='rmuphoto'){F(async()=>{await D.removeAvatar('user',ME,MEP.avatar_path);MEP.avatar_path=null;USERS[ME].avatar_path=null;draw()})}
@@ -436,8 +447,10 @@ SR.addEventListener('click',ev0=>{
  else if(a==='unlock'){const fid=c.plan[D_.k].final,o=c.plan[D_.k].opts.find(z=>z.id===fid);act(()=>{c.plan[D_.k].final=null},async()=>{await D.setLock(c.id,D_.k,fid,false);logA(c,first(ME)+' reopened '+PK[D_.k][1].toLowerCase());await sysMsg(c,{k:'unlock',pk:D_.k,v:o&&o.v})})}
  else if(a==='nsound'){NS.sound=!NS.sound;saveNS();if(NS.sound)ding()}
  else if(a==='nprev'){NS.preview=!NS.preview;saveNS()}
+ else if(a==='ntest'){toast('Test alert in 4 seconds. Switch to another app or tab now.');setTimeout(()=>{ding();const foc=document.visibilityState==='visible'&&document.hasFocus();
+   if(document.visibilityState==='visible')banner({id:'',type:'dm',members:[{u:ME},{u:ME}]},{who:ME},'D&K test','Alerts are working on this device');if(sysOK()&&!foc)showSys('D&K test','Alerts are working on this device','test')},4000);return}
  else if(a==='nsys'){if(NS.sys){NS.sys=false;saveNS()}else F(async()=>{if(typeof Notification==='undefined'){toast('Not supported in this browser. On iPhone, add D&K to your Home Screen first.');return}
-   const pm=Notification.permission==='granted'?'granted':await Notification.requestPermission();if(pm==='granted'){NS.sys=true;saveNS();toast('Alerts are on')}else toast('Notifications are blocked. Allow them in your browser settings.');draw()})}
+   const pm=Notification.permission==='granted'?'granted':await Notification.requestPermission();if(pm==='granted'){NS.sys=true;saveNS();await ensureSW();toast('Alerts are on')}else toast('Notifications are blocked. Allow them in your browser settings.');draw()})}
  else if(a==='npush'){F(async()=>{if(NS.push){await disablePush();toast('Closed-app alerts are off')}else{await enablePush();toast('Closed-app alerts are on')}draw()})}
  else if(a==='banner'){g('ppnote').innerHTML='';openChat(D_.id);return}
  else if(a==='ctallow'){askContacts().then(()=>{draw();drawReg()});return}
@@ -461,6 +474,8 @@ function inject(){const n=document.querySelector('.nav');
   sr.innerHTML='<style>'+window.PP_CSS+'</style><div class="cd" data-rm="1" style="background:var(--card);color:var(--ink)"></div>';mn.insertBefore(h,mn.children[2]||null);wire(sr);roots.add(sr);drawReg()}}}
 document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.ppnav'))openPP()});
 setInterval(()=>{[...roots,SR].forEach(r=>r.querySelectorAll('[data-rt]').forEach(b=>{const n=Math.max(0,30-Math.floor((Date.now()-REG.sent)/1000));b.textContent=n>0?'Resend in '+n+'s':'Resend code';b.disabled=n>0}))},1000);
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&AUTH.state==='in'&&Date.now()-lastSync>6000)loadState(false)});
+window.addEventListener('online',()=>{if(AUTH.state==='in')loadState(false)});
 (function start(){if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='pp-open')openChat(e.data.cid)});const app=document.getElementById('app');if(app)new MutationObserver(inject).observe(app,{childList:true,subtree:true});inject();
  const t=setInterval(()=>{if(!window._sb)return;clearInterval(t);D.init(window._sb);boot().then(()=>{if(D.joinToken()&&AUTH.state!=='in'){REG.invite=true;REG.mode='register';try{tab='profile';render()}catch(e){}}})},150)})();
 })();

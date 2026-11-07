@@ -68,9 +68,9 @@ D.decrypt=async row=>{const k=D.convKey(row.conversation_id,row.key_version);if(
 /* ---- loading ---- */
 const sel=(t,f)=>{let q=D.sb.from(t).select('*');return f?f(q):q};
 const rows=async(t,f)=>ok(await sel(t,f))||[];
-D.loadAll=async me=>{
+D.loadAll=async(me,o)=>{
  const [members,convs]=await Promise.all([rows('pp_members'),rows('pp_conversations')]),ids=convs.map(c=>c.id),uids=[...new Set(members.map(m=>m.user_id).concat([me]))];
- const [profiles,msgs,items,opts,votes,acts,invs]=ids.length?await Promise.all([rows('pp_profiles',q=>q.in('id',uids)),rows('pp_messages',q=>q.in('conversation_id',ids).order('created_at',{ascending:false}).limit(1500)),
+ const [profiles,msgs,items,opts,votes,acts,invs]=ids.length?await Promise.all([rows('pp_profiles',q=>q.in('id',uids)),(o&&o.light?Promise.resolve([]):rows('pp_messages',q=>q.in('conversation_id',ids).order('created_at',{ascending:false}).limit(1500))),
   rows('pp_items',q=>q.in('conversation_id',ids)),rows('pp_plan_options',q=>q.in('conversation_id',ids)),rows('pp_votes',q=>q.in('conversation_id',ids)),
   rows('pp_activity',q=>q.in('conversation_id',ids).order('created_at',{ascending:false}).limit(600)),rows('pp_invites',q=>q.in('conversation_id',ids))]):[await rows('pp_profiles',q=>q.eq('id',me)),[],[],[],[],[],[]];
  profiles.forEach(p=>D.users[p.id]=p);return {members,convs,profiles,msgs:msgs.reverse(),items,opts,votes,acts,invs}};
