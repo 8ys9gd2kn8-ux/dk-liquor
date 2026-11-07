@@ -130,5 +130,8 @@ D.setSession=async t=>{const r=await D.sb.auth.setSession({access_token:t.access
 /* forgot passphrase: a NEW key pair replaces the old one. Old chats become readable again once another member's device shares the chat key. */
 D.resetIdentity=async(uid,pass)=>{await C.wipe(uid);const g=await C.generate(),priv=await C.importPriv(g.priv);await C.save(uid,priv,g.pub);D.ident={priv,pub:g.pub};D.keys={};
  ok(await D.sb.from('pp_key_backups').upsert(Object.assign({user_id:uid},await C.backup(g.priv,pass))));ok(await D.sb.from('pp_profiles').update({pubkey:g.pub}).eq('id',uid))};
+/* ---- background push subscriptions (device -> user). Ownership moves to whoever is signed in on that device. ---- */
+D.savePush=(sub,ua)=>D.sb.rpc('pp_save_push',{p_endpoint:sub.endpoint,p_p256dh:sub.keys.p256dh,p_auth:sub.keys.auth,p_ua:ua||''}).then(ok);
+D.dropPush=endpoint=>D.sb.rpc('pp_drop_push',{p_endpoint:endpoint}).then(ok);
 window.PPData=D;
 })();

@@ -52,4 +52,9 @@ window.PP_CSS=`*{box-sizing:border-box}button,input,select{font-family:inherit}
 .me-top{display:flex;align-items:center;gap:8px}.sh .av{flex:none}
 
 .fl2{display:block;margin-top:6px;font-size:13px;color:var(--mute)}.fl2 .fi{margin-top:4px}.sh .fl2{color:#9a9aa3}
+
+#ppnote{position:fixed;left:0;right:0;top:calc(10px + env(safe-area-inset-top,0px));z-index:1200;display:flex;justify-content:center;pointer-events:none;font:15px/1.35 -apple-system,"Segoe UI",Roboto,sans-serif}
+#ppnote .bn{pointer-events:auto;background:#1c1c20;color:#f2f2f2;border-radius:16px;box-shadow:0 8px 28px #000b;padding:10px 14px;max-width:min(92%,420px);width:100%;display:flex;gap:10px;align-items:center;cursor:pointer;border:1px solid #2c2c31;animation:bn .25s ease-out}
+#ppnote .bn b{display:block}#ppnote .bn small{color:#b8b8c0;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}#ppnote .bn .sp{min-width:0}@keyframes bn{from{transform:translateY(-20px);opacity:0}to{transform:none;opacity:1}}
+.ntf{margin:10px 0 2px;font-weight:700}
 `;

@@ -85,11 +85,50 @@ const ENS={};
 async function ensureKeys(c){if(ENS[c.id]&&Date.now()-ENS[c.id]<20000)return;ENS[c.id]=Date.now();try{await D.loadProfiles(c.members.map(m=>m.u));const r=await D.ensureKeys(c.id,c.keyVer,c.members.map(m=>m.u),USERS,ME);for(const id of r.changed||[])sysMsg(c,{k:'keychanged',id})}catch(e){console.warn('key share',e)}}
 function schedule(){clearTimeout(tmr);tmr=setTimeout(loadState,350)}
 async function onRT(table,p){
- if(table==='pp_messages'&&p.eventType==='INSERT'&&p.new){const c=conv(p.new.conversation_id);if(!c){schedule();return}const ex=c.msgs.find(x=>x.id===p.new.id);
-  if(ex){ex.pending=false;return}const x=await toMsg(p.new);c.msgs.push(x);if(PP.open&&PP.view==='chat'&&PP.cid===c.id){markRead(c)}else if(x.who!==ME&&x.type!=='sys')c.unread++;draw();return}
+ if(table==='pp_messages'&&p.eventType==='INSERT'&&p.new){let c=conv(p.new.conversation_id);
+  if(!c){await loadState();c=conv(p.new.conversation_id);const nx=c&&c.msgs.find(z=>z.id===p.new.id);if(nx)notifyIncoming(c,nx);return}
+  const ex=c.msgs.find(x=>x.id===p.new.id);if(ex){ex.pending=false;return}const x=await toMsg(p.new);c.msgs.push(x);
+  const watching=PP.open&&PP.view==='chat'&&PP.cid===c.id&&document.visibilityState==='visible';
+  if(watching)markRead(c);else if(x.who!==ME&&x.type!=='sys')c.unread++;
+  notifyIncoming(c,x);draw();return}
  schedule()}
 function markRead(c){c.unread=0;D.updMember(c.id,ME,{last_read_at:new Date().toISOString()}).catch(()=>{})}
 /* ---------------- toast + safe remote calls ---------------- */
+
+/* ---------------- notifications ---------------- */
+const NK='dk-pp-notif',NS=Object.assign({sound:true,preview:false,sys:false,push:false},(()=>{try{return JSON.parse(localStorage.getItem(NK))||{}}catch(e){return {}}})());
+const saveNS=()=>{try{localStorage.setItem(NK,JSON.stringify(NS))}catch(e){}};
+const baseTitle=document.title;
+function totalBadge(){const n=unr();document.title=n>0?'('+n+') '+baseTitle:baseTitle;document.querySelectorAll('.nav .ppbadge').forEach(b=>{b.textContent=n>99?'99+':String(n);b.style.display=n>0?'flex':'none'})}
+let AC;function ding(){if(!NS.sound)return;try{AC=AC||new (window.AudioContext||window.webkitAudioContext)();const t=AC.currentTime,o=AC.createOscillator(),gn=AC.createGain();o.type='sine';o.frequency.setValueAtTime(880,t);o.frequency.setValueAtTime(1175,t+.12);gn.gain.setValueAtTime(.0001,t);gn.gain.exponentialRampToValueAtTime(.12,t+.02);gn.gain.exponentialRampToValueAtTime(.0001,t+.4);o.connect(gn);gn.connect(AC.destination);o.start(t);o.stop(t+.42)}catch(e){}}
+const sysOK=()=>typeof Notification!=='undefined'&&Notification.permission==='granted';
+const pushOK=()=>!!(CFG.vapidPublicKey&&'serviceWorker' in navigator&&'PushManager' in window&&(location.protocol==='https:'||location.hostname==='localhost'));
+function openChat(cid){const c=conv(cid);if(!c)return;PP.open=true;PP.view='chat';PP.cid=cid;PP.sheet=null;PP.reply=null;markRead(c);draw()}
+let bnT;function banner(c,x,title,body){const el=g('ppnote');if(!el)return;clearTimeout(bnT);
+ el.innerHTML=`<div class="bn" data-pa="banner" data-id="${c.id}">${isDM(c)?avU(x.who,38):avC(c,38)}<div class="sp"><b class="ell">${esc(title)}</b><small>${esc(body)}</small></div></div>`;bnT=setTimeout(()=>{el.innerHTML=''},5500)}
+async function showSys(title,body,cid){const o={body,tag:cid,icon:'dk-icon-192.png',data:{cid}};let reg=null;
+ try{reg=('serviceWorker' in navigator)?await navigator.serviceWorker.getRegistration():null}catch(e){}
+ try{if(reg&&reg.showNotification){await reg.showNotification(title,o);return}}catch(e){}
+ try{const n=new Notification(title,o);n.onclick=()=>{try{window.focus()}catch(e){}openChat(cid);n.close()}}catch(e){}}
+const mentionsMe=x=>!!(x.t&&MEP&&MEP.username&&new RegExp('@'+MEP.username+'\\b','i').test(x.t));
+function notifyIncoming(c,x){if(!x||x.who===ME||x.type==='sys'||x.pending)return;
+ const vis=document.visibilityState==='visible',foc=vis&&document.hasFocus();
+ if(PP.open&&PP.view==='chat'&&PP.cid===c.id&&foc)return;          /* you are looking at this chat */
+ const ment=mentionsMe(x);if(c.muted&&!ment)return;                /* muted chats stay quiet unless you are @mentioned */
+ const dm=isDM(c),who=first(x.who),act=x.type==='prod'||x.type==='share'?'shared a product':x.type==='poll'?'made a proposal':'';
+ let body=!x.ok?'New message':NS.preview?(dm?'':who+': ')+(act||(x.t||'New message').slice(0,90)):(dm?'New message':who+': new message');
+ if(!NS.preview&&act)body=dm?'Shared a product':who+' '+act;if(ment)body='Mentioned you · '+body;
+ const title=dm?full(x.who):(c.name||'Group');
+ ding();if(vis)banner(c,x,title,body);if(NS.sys&&sysOK()&&!foc)showSys(title,body,c.id)}
+const b64u=s=>{const r=atob((s+'='.repeat((4-s.length%4)%4)).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(r,ch=>ch.charCodeAt(0))};
+async function enablePush(){if(typeof Notification==='undefined')throw new Error('Not supported in this browser. On iPhone, add D&K to your Home Screen first.');
+ const perm=Notification.permission==='granted'?'granted':await Notification.requestPermission();if(perm!=='granted')throw new Error('Notifications are blocked. Allow them in your browser settings.');
+ const reg=await navigator.serviceWorker.register('sw.js');await navigator.serviceWorker.ready;let sub=await reg.pushManager.getSubscription();
+ if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(CFG.vapidPublicKey)});
+ await D.savePush(sub.toJSON(),navigator.userAgent.slice(0,120));NS.push=true;NS.sys=true;saveNS()}
+async function disablePush(){try{const reg=await navigator.serviceWorker.getRegistration(),sub=reg&&await reg.pushManager.getSubscription();if(sub){await D.dropPush(sub.endpoint).catch(()=>{});await sub.unsubscribe()}}catch(e){}NS.push=false;saveNS()}
+const nrow=(t,on,pa,sub)=>`<div class="ri" data-pa="${pa}"><div class="sp">${t}${sub?`<div class="mu">${sub}</div>`:''}</div><span class="sw ${on?'on':''}"></span></div>`;
+function notifHtml(){const sup=typeof Notification!=='undefined';return `<div class="ntf">Notifications</div><div class="cd2">${nrow('Alerts on this device',NS.sys&&sysOK(),'nsys',sup?'Banner and system alerts for new messages':'Not supported in this browser. On iPhone, add D&K to your Home Screen first.')}${nrow('Sound',NS.sound,'nsound')}${nrow('Show message text in alerts',NS.preview,'nprev','Off keeps message text off your lock screen')}${pushOK()?nrow('Alerts when the app is closed',NS.push,'npush','Sends a "new message" alert only. The server never sees your message text.'):''}</div><div class="mu">Mute a single chat from its info page. Muted chats stay quiet unless you are @mentioned.</div>`}
 function toast(t){setTimeout(()=>{const r=g('pp');if(!r)return;const el=document.createElement('div');el.className='toast';el.textContent=t;r.appendChild(el);setTimeout(()=>el.remove(),2600)},0)}
 const fail=e=>{console.warn(e);toast((e&&e.message&&e.message.length<90?e.message:'That did not save. Please try again.'));loadState()};
 const act=(local,remote)=>{local();draw();Promise.resolve().then(remote).catch(fail)};
@@ -109,7 +148,7 @@ function sysText(x){const o=x.sys||{},a=nm(o.a),ids=(o.ids||[]).map(nm).join(', 
   keychanged:full(o.id)+"'s security code changed",lock:a+' locked in '+(PK[o.pk]||['','item'])[1].toLowerCase()+': '+fv(o.pk,o.v),unlock:a+' reopened '+(PK[o.pk]||['','item'])[1].toLowerCase()+' for discussion',joined:full(o.a)+' joined using an invitation link'}[o.k]||''}
 /* ---------------- Shadow DOM host (shop CSS can never leak in, and vice versa) ---------------- */
 document.body.insertAdjacentHTML('beforeend','<div id="pphost"></div>');
-const SR=document.getElementById('pphost').attachShadow({mode:'open'});SR.innerHTML='<style>'+window.PP_CSS+'</style><div id="pp"></div>';
+const SR=document.getElementById('pphost').attachShadow({mode:'open'});SR.innerHTML='<style>'+window.PP_CSS+'</style><div id="pp"></div><div id="ppnote" role="status" aria-live="polite"></div>';
 const g=id=>SR.getElementById(id);
 /* ---------------- account card: register / sign in / unlock (lives ONLY on the Profile page) ---------------- */
 const REG={mode:'register',step:'form',f:{},err:'',note:'',ch:'sms',sent:0,tries:0,anon:false,needEmail:false,busy:false,invite:false},roots=new Set(),FP={};
@@ -153,7 +192,7 @@ async function askContacts(){CT=null;
  if(!CT&&window.DK_DEMO_CONTACTS){CT=window.DK_DEMO_CONTACTS.map(c=>Object.assign({},c));CTSRC='demo'}
  if(!CT){toast('This browser cannot open your contacts. Search by username or phone instead.');return}
  try{CTM=await D.matchContacts(CT)}catch(e){CTM=[];toast('Could not match contacts')}}
-async function afterAuth(){if(AUTH.state!=='in')return;REG.f={};const t=D.joinToken();
+async function afterAuth(){if(AUTH.state!=='in')return;REG.f={};const ch=/[#&]chat=([\w-]{36})/.exec(location.hash);if(ch){history.replaceState(null,'',location.pathname+location.search);openChat(ch[1])}const t=D.joinToken();
  if(t){try{const cid=await D.accept(t);D.clearJoin();await loadState();toast('You joined the group');PP.open=true;PP.view='chat';PP.cid=cid;draw()}catch(e){D.clearJoin();toast(e.message||'Invitation link not valid')}}}
 async function boot(){try{const u=await D.realUser();
   if(!u){AUTH.state='out';ME=null;CONVS=[];return}
@@ -166,7 +205,7 @@ async function boot(){try{const u=await D.realUser();
  catch(e){console.error(e);AUTH.state='out';AUTH.err='Could not reach the server. Please try again.'}finally{draw();drawReg()}}
 /* The shop reads the signed-in user once when the page loads, so after switching accounts the page must reload. */
 async function switchedAccount(){if(window.DK_DEMO){await boot();return}location.reload()}
-async function signOutNow(){const id=ME;await D.signOut(id);if(!window.DK_DEMO){location.reload();return}
+async function signOutNow(){const id=ME;if(NS.push)await disablePush();await D.signOut(id);if(!window.DK_DEMO){location.reload();return}
  ME=null;MEP=null;CONVS=[];CT=null;CTM=[];DECC.clear();started=false;AUTH.state='out';AUTH.err='';REG.mode='signin';REG.step='form';REG.f={};REG.busy=false;PP.open=false;draw();drawReg()}
 async function regAct(x){const a=x.dataset.ra,root=x.getRootNode(),f=REG.f;
  root.querySelectorAll('[data-rf]').forEach(el=>{f[el.dataset.rf]=/^(pw|pass|spw|upass|rpw|np|np2)$/.test(el.dataset.rf)?el.value:el.value.trim()});
@@ -295,7 +334,7 @@ function ctRows(mode,c){const q=(PP.q||'').toLowerCase().trim(),ng=PP.ng||{sel:[
  if(q&&mode!=='chat')h+=`<button class="gb" style="width:100%;margin-top:8px" data-pa="${gm?'ngo':'invlink'}" data-l="${esc(PP.q.trim())}">Invite “${esc(PP.q.trim())}” by link</button>`;
  return h||'<p class="mu">Search by exact @username or full phone number.</p>'}
 function sheet(c){const s=PP.sheet;if(!s)return '';let b='';
- if(s==='me')b=`<div class="ph">${av(full(ME),MEP&&MEP.avatar_path,72,ME)}<div class="sp"><b style="font-size:17px">${esc(full(ME))}</b><div class="mu">@${esc(uname(ME))}</div></div></div><div class="row" style="flex-wrap:wrap"><label class="gb" style="cursor:pointer" data-pa="uphoto">${ic('camera',16)} ${MEP&&MEP.avatar_path?'Change photo':'Add photo'}</label>${MEP&&MEP.avatar_path?`<button class="gb" data-pa="rmuphoto">Remove photo</button>`:''}</div><div class="mu" style="margin-top:10px">${ic('lock',14)} Your key fingerprint</div><div class="fpr">${esc(fpOf(ME))}</div>`;
+ if(s==='me')b=`<div class="ph">${av(full(ME),MEP&&MEP.avatar_path,72,ME)}<div class="sp"><b style="font-size:17px">${esc(full(ME))}</b><div class="mu">@${esc(uname(ME))}</div></div></div><div class="row" style="flex-wrap:wrap"><label class="gb" style="cursor:pointer" data-pa="uphoto">${ic('camera',16)} ${MEP&&MEP.avatar_path?'Change photo':'Add photo'}</label>${MEP&&MEP.avatar_path?`<button class="gb" data-pa="rmuphoto">Remove photo</button>`:''}</div>${notifHtml()}<div class="mu" style="margin-top:10px">${ic('lock',14)} Your key fingerprint</div><div class="fpr">${esc(fpOf(ME))}</div>`;
  if(s==='plus'){const grp=c&&!isDM(c);b=`<div class="cd2"><div class="ri" data-pa="sheet" data-v="cat">${ic('bottle',18)} Product from D&K catalogue</div>${grp?['date','time','venue'].map(k=>`<div class="ri" data-pa="prop" data-k="${k}">${ic(PK[k][0],18)} Propose a ${PK[k][1].toLowerCase()}</div>`).join(''):''}</div>`}
  if(s==='act'){const x=c.msgs.find(z=>z.id===PP.mid);b=x?`<div class="rxr">${['👍','❤️','😂','😮','🙏'].map(e=>`<button data-pa="react" data-e="${e}">${e}</button>`).join('')}</div><div class="cd2"><div class="ri" data-pa="reply">${ic('reply',18)} Reply</div>${x.del||!x.ok?'':`<div class="ri" data-pa="cpmsg">${ic('copy',18)} Copy</div>`}${x.who===ME&&!x.del?`<div class="ri rd" data-pa="delm">${ic('trash',18)} Delete</div>`:''}</div>`:''}
  if(s==='cat')b=`<h3 style="margin:0 0 6px">${isDM(c)?'Send a product':'Add a product to the group'}</h3><input id="ppsq" placeholder="Search D&K catalogue" value="${esc(PP.q)}"><div class="chips">${['All',...new Set(S.products.map(p=>p.category))].map(k=>`<button class="${PP.cat===k?'on':''}" data-pa="fc" data-c="${esc(k)}">${esc(k)}</button>`).join('')}</div><div id="pplist">${listRows()}</div>`;
@@ -311,7 +350,7 @@ function sheet(c){const s=PP.sheet;if(!s)return '';let b='';
  if(s==='exit')b=`<h3 style="margin:0 0 6px">Exit "${esc(c.name)}"?</h3><p class="mu">You will stop receiving messages from this group.</p><button class="lk" style="color:#ff6b6b" data-pa="doexit">Exit group</button><button class="lk" data-pa="shx">Cancel</button>`;
  if(s==='contact'){const u=USERS[PP.cu]||{},grp=c&&!isDM(c)&&c.members.find(x=>x.u===PP.cu);b=`<div class="row">${avU(PP.cu,52)}<div><b>${esc(u.name||'')}</b><div class="mu">@${esc(u.username||'')}${PP.cu===ME?' (you)':''}</div></div></div><div class="cd" style="margin-top:10px;background:#26262a"><div class="mu">Contact point</div><b>+${esc(u.phone||'')}</b></div>${PP.cu===ME?'':`<button class="pb" style="width:100%" data-pa="dm" data-u="${PP.cu}">${ic('chat',16)} Message</button><a class="lk" href="tel:+${wa(u.phone)}">${ic('phone',16)} Call</a><a class="lk" target="_blank" rel="noopener" href="https://wa.me/${wa(u.phone)}">${ic('whats',16)} WhatsApp</a>`}${grp&&isAd(c)&&PP.cu!==ME&&grp.r!=='organiser'?`<button class="lk" data-pa="mkadm" data-u="${PP.cu}">${grp.r==='admin'?'Dismiss as admin':'Make group admin'}</button><button class="lk" style="color:#ff6b6b" data-pa="rmm" data-u="${PP.cu}">Remove from group</button>`:''}`}
  return `<div class="sh" data-pa="shx"><div>${b}</div></div>`}
-function draw(){const root=g('pp');if(!root)return;root.className=PP.open?'on':'';if(!PP.open){root.innerHTML='';return}
+function draw(){const root=g('pp');if(!root)return;totalBadge();root.className=PP.open?'on':'';if(!PP.open){root.innerHTML='';return}
  const keep=g('ppin'),val=keep?keep.value:'',foc=keep&&SR.activeElement===keep,cs=g('ppcs'),csf=cs&&SR.activeElement===cs,w0=root.querySelector('.wall'),pr=w0&&{top:w0.scrollTop,bot:w0.scrollHeight-w0.scrollTop-w0.clientHeight<80};
  let h;if(AUTH.state!=='in')h=noAcct();else{let c=PP.cid&&conv();if(PP.view!=='chats'&&!c){PP.view='chats';c=null}h=({chats:chatsView,chat:chatView,info:infoView,panel:panelView}[PP.view])(c)+sheet(c)}
  root.innerHTML=h+'<input type="file" id="ppfile" accept="image/jpeg,image/png,image/webp" hidden>';
@@ -395,6 +434,12 @@ SR.addEventListener('click',ev0=>{
  else if(a==='ov'){const o=c.plan[D_.k].opts.find(z=>z.id===D_.o),nv=o.votes[ME]?0:1;act(()=>{if(nv)o.votes[ME]=1;else delete o.votes[ME]},()=>D.vote(c.id,'option',o.id,ME,nv))}
  else if(a==='lock'){if(!isAd(c))return;const o=c.plan[D_.k].opts.find(z=>z.id===D_.o);act(()=>{c.plan[D_.k].final=o.id},async()=>{await D.setLock(c.id,D_.k,o.id,true);logA(c,first(ME)+' locked in '+PK[D_.k][1].toLowerCase()+': '+fv(D_.k,o.v));await sysMsg(c,{k:'lock',pk:D_.k,v:o.v})})}
  else if(a==='unlock'){const fid=c.plan[D_.k].final,o=c.plan[D_.k].opts.find(z=>z.id===fid);act(()=>{c.plan[D_.k].final=null},async()=>{await D.setLock(c.id,D_.k,fid,false);logA(c,first(ME)+' reopened '+PK[D_.k][1].toLowerCase());await sysMsg(c,{k:'unlock',pk:D_.k,v:o&&o.v})})}
+ else if(a==='nsound'){NS.sound=!NS.sound;saveNS();if(NS.sound)ding()}
+ else if(a==='nprev'){NS.preview=!NS.preview;saveNS()}
+ else if(a==='nsys'){if(NS.sys){NS.sys=false;saveNS()}else F(async()=>{if(typeof Notification==='undefined'){toast('Not supported in this browser. On iPhone, add D&K to your Home Screen first.');return}
+   const pm=Notification.permission==='granted'?'granted':await Notification.requestPermission();if(pm==='granted'){NS.sys=true;saveNS();toast('Alerts are on')}else toast('Notifications are blocked. Allow them in your browser settings.');draw()})}
+ else if(a==='npush'){F(async()=>{if(NS.push){await disablePush();toast('Closed-app alerts are off')}else{await enablePush();toast('Closed-app alerts are on')}draw()})}
+ else if(a==='banner'){g('ppnote').innerHTML='';openChat(D_.id);return}
  else if(a==='ctallow'){askContacts().then(()=>{draw();drawReg()});return}
  else if(a==='gotoprof'){PP.open=false;tab='profile';msg='';render()}
  else if(a==='mn'){const i=g('ppin');i.value=i.value.replace(/@\w*$/,'@'+D_.un+' ');g('ppmn').style.display='none';i.focus();syncGo();return}
@@ -409,13 +454,13 @@ SR.addEventListener('input',e1=>{const t=e1.target;
  else if(t.id==='ppin'){syncGo();const c=conv(),mm=t.value.match(/@(\w*)$/),box=g('ppmn');if(!mm||isDM(c)){box.style.display='none';return}const q=mm[1].toLowerCase(),r=c.members.filter(x=>x.u!==ME&&(uname(x.u)+full(x.u)).toLowerCase().includes(q));box.innerHTML=r.map(x=>`<div data-pa="mn" data-un="${esc(uname(x.u))}"><b>${esc(full(x.u))}</b><small>@${esc(uname(x.u))} · +${esc((USERS[x.u]||{}).phone||'')}</small></div>`).join('');box.style.display=r.length?'block':'none'}});
 SR.addEventListener('keydown',k=>{if(k.target.id==='ppin'&&k.key==='Enter'){k.preventDefault();SR.querySelector('[data-pa=go]').click()}});
 /* ---------------- shop integration: nav button + Profile page card ---------------- */
-document.head.insertAdjacentHTML('beforeend','<style>.nav button.ppnav{color:var(--ink)}.nav button.ppnav .ic{background:#111!important;color:#ffc244;border-radius:50%;width:50px;height:50px;padding:0!important;display:flex;align-items:center;justify-content:center;margin-top:-22px;box-shadow:0 0 0 4px var(--card),0 5px 14px #0006;border:2px solid #ffc244}.nav button.ppnav .ic svg{width:24px;height:24px}.nav button.ppnav.on:before{display:none}.nav button.ppnav em{font-weight:700}</style>');
+document.head.insertAdjacentHTML('beforeend','<style>.nav button.ppnav{color:var(--ink);position:relative}.nav button.ppnav .ppbadge{position:absolute;top:-30px;left:calc(50% + 6px);background:#e5484d;color:#fff;font:700 11px/16px sans-serif;font-style:normal;min-width:20px;height:20px;border-radius:10px;padding:0 5px;align-items:center;justify-content:center;border:2px solid var(--card);z-index:3}.nav button.ppnav .ic{background:#111!important;color:#ffc244;border-radius:50%;width:50px;height:50px;padding:0!important;display:flex;align-items:center;justify-content:center;margin-top:-22px;box-shadow:0 0 0 4px var(--card),0 5px 14px #0006;border:2px solid #ffc244}.nav button.ppnav .ic svg{width:24px;height:24px}.nav button.ppnav.on:before{display:none}.nav button.ppnav em{font-weight:700}</style>');
 function inject(){const n=document.querySelector('.nav');
- if(n&&!n.querySelector('.ppnav')){const b=document.createElement('button');b.type='button';b.className='ppnav';b.setAttribute('aria-label','Party Planner');b.innerHTML='<b class="ic">'+ic('chats',24)+'</b><em class="nl">Planner</em>';n.insertBefore(b,n.children[Math.floor(n.children.length/2)])}
+ if(n&&!n.querySelector('.ppnav')){const b=document.createElement('button');b.type='button';b.className='ppnav';b.setAttribute('aria-label','Party Planner');b.innerHTML='<b class="ic">'+ic('chats',24)+'</b><em class="nl">Planner</em><i class="ppbadge" style="display:none"></i>';n.insertBefore(b,n.children[Math.floor(n.children.length/2)])}
  if(typeof tab!=='undefined'&&tab==='profile'){const mn=document.querySelector('#app main');if(mn&&!mn.querySelector('#dkregslot')){const h=document.createElement('div');h.id='dkregslot';const sr=h.attachShadow({mode:'open'});
   sr.innerHTML='<style>'+window.PP_CSS+'</style><div class="cd" data-rm="1" style="background:var(--card);color:var(--ink)"></div>';mn.insertBefore(h,mn.children[2]||null);wire(sr);roots.add(sr);drawReg()}}}
 document.addEventListener('click',e=>{if(e.target.closest&&e.target.closest('.ppnav'))openPP()});
 setInterval(()=>{[...roots,SR].forEach(r=>r.querySelectorAll('[data-rt]').forEach(b=>{const n=Math.max(0,30-Math.floor((Date.now()-REG.sent)/1000));b.textContent=n>0?'Resend in '+n+'s':'Resend code';b.disabled=n>0}))},1000);
-(function start(){const app=document.getElementById('app');if(app)new MutationObserver(inject).observe(app,{childList:true,subtree:true});inject();
+(function start(){if('serviceWorker' in navigator)navigator.serviceWorker.addEventListener('message',e=>{if(e.data&&e.data.type==='pp-open')openChat(e.data.cid)});const app=document.getElementById('app');if(app)new MutationObserver(inject).observe(app,{childList:true,subtree:true});inject();
  const t=setInterval(()=>{if(!window._sb)return;clearInterval(t);D.init(window._sb);boot().then(()=>{if(D.joinToken()&&AUTH.state!=='in'){REG.invite=true;REG.mode='register';try{tab='profile';render()}catch(e){}}})},150)})();
 })();

@@ -35,7 +35,7 @@ const greeted=new Set(),SEEDED=new Set(),SEEDEDU=new Set();window.__DK_DEBUG_DB=
 function after(t,row){const u=me();
  if(t==='pp_messages'&&row.kind==='text'&&row.sender_id===u){const cv=T.pp_conversations.find(c=>c.id===row.conversation_id),bs=botsIn(row.conversation_id);if(!cv||!bs.length)return;
   if(cv.type==='dm'){botSay(bs[0],cv.id,['Okay','Sounds good!','Let me check and get back to you','Haha yes!','Perfect, thanks'][Math.floor(Math.random()*5)],1400)}
-  else bs.forEach(async b=>{const k=await C.dec(await botKey(b,cv.id,row.key_version),row.ciphertext,row.iv,cv.id+':'+u).catch(()=>null);if(k&&k.t&&k.t.toLowerCase().includes('@'+b.un))botSay(b,cv.id,'Seen, thanks',1200)})}
+  else bs.forEach(async b=>{const k=await C.dec(await botKey(b,cv.id,row.key_version),row.ciphertext,row.iv,cv.id+':'+u).catch(()=>null);if(k&&k.t&&k.t.toLowerCase().includes('@'+b.un))botSay(b,cv.id,'Seen, thanks @'+((T.pp_profiles.find(p=>p.id===u)||{}).username||''),1200)})}
  if(t==='pp_items'&&row.created_by===u){const bs=botsIn(row.conversation_id);if(bs[0]){botVote(bs[0],row.conversation_id,'item',row.id,1500);botSay(bs[0],row.conversation_id,'Good pick',1700)}}
  if(t==='pp_plan_options'&&row.proposed_by===u){const bs=botsIn(row.conversation_id);if(bs[0])botVote(bs[0],row.conversation_id,'option',row.id,1500)}
  if(t==='pp_member_keys'&&bot(row.user_id)&&!SEEDED.has(row.conversation_id)&&!greeted.has(row.conversation_id+row.user_id)){greeted.add(row.conversation_id+row.user_id);botSay(bot(row.user_id),row.conversation_id,'Hi everyone, thanks for adding me',1300)}}
@@ -110,6 +110,7 @@ const RPC={
   T.pp_members.splice(T.pp_members.indexOf(mine),1);if(!T.pp_members.some(m=>m.conversation_id===p_cid))T.pp_conversations.splice(T.pp_conversations.findIndex(c=>c.id===p_cid),1);return {data:null,error:null}},
  async pp_react({p_mid,p_emoji}){const m=T.pp_messages.find(x=>x.id===p_mid);if(!m||!visible('pp_messages',m))return err('not allowed');m.reactions=Object.assign({},m.reactions);if(m.reactions[me()]===p_emoji)delete m.reactions[me()];else m.reactions[me()]=p_emoji;notify('pp_messages','UPDATE',m);return {data:null,error:null}},
  async pp_delete_message({p_mid}){const m=T.pp_messages.find(x=>x.id===p_mid&&x.sender_id===me());if(m){m.deleted_at=iso();m.ciphertext=null;m.iv=null;m.payload={};notify('pp_messages','UPDATE',m)}return {data:null,error:null}},
+ async pp_save_push(){return {data:null,error:null}},async pp_drop_push(){return {data:null,error:null}},
  async pp_accept_invite({p_token}){const h=await C.sha256hex(p_token),inv=T.pp_invites.find(i=>i.token_hash===h&&!i.used_by&&Date.parse(i.expires_at)>Date.now());if(!inv)return err('This invitation link is invalid or has expired');
   if(!T.pp_members.some(m=>m.conversation_id===inv.conversation_id&&m.user_id===me())){const row={conversation_id:inv.conversation_id,user_id:me(),role:'member',muted:false,last_read_at:iso(),joined_at:iso()};T.pp_members.push(row);notify('pp_members','INSERT',row)}inv.used_by=me();return {data:inv.conversation_id,error:null}}};
 /* ---------- auth + OTP ---------- */
