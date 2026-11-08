@@ -6,4 +6,4 @@
  *                 It enables sign-in with username + password and password reset by username.
  * vapidPublicKey: public key for background push alerts (see README, 'Notifications'). Leave empty to use in-app alerts only.
  */
-window.DK_PP={primaryVerify:'email',smsEnabled:false,accountFunction:false,vapidPublicKey:''};
+window.DK_PP={primaryVerify:'email',smsEnabled:false,accountFunction:false,vapidPublicKey:'BCrBL-y43XYjB66OvS2M_zQKEqxyYwHfEWFAiMdmENygaTZFgkYrT0wptYMWbJnAoLJILvXDDFGvJfeh6-nJkn4'};
