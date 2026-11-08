@@ -47,17 +47,19 @@ D.fingerprint=C.fingerprint;
 D.convKey=(cid,v)=>(D.keys[cid]||{})[v];
 D.latest=cid=>{const k=D.keys[cid]||{},vs=Object.keys(k).map(Number);return vs.length?Math.max(...vs):0};
 D.loadKeys=async(uid,users)=>{const rows=ok(await D.sb.from('pp_member_keys').select('*').eq('user_id',uid))||[];
- for(const r of rows){if(D.convKey(r.conversation_id,r.version))continue;const w=users[r.wrapped_by];if(!w||!w.pubkey)continue;
-  try{(D.keys[r.conversation_id]=D.keys[r.conversation_id]||{})[r.version]=await C.unwrap(r.wrapped_key,D.ident.priv,w.pubkey)}catch(e){}}};
-const wrapRow=async(cid,ver,key,uid,user,me)=>({conversation_id:cid,user_id:uid,version:ver,wrapped_key:await C.wrap(key,D.ident.priv,user.pubkey),wrapped_by:me,recipient_fp:await C.fingerprint(user.pubkey)});
+ for(const r of rows){if(D.convKey(r.conversation_id,r.version))continue;const w=users[r.wrapped_by];if(!r.wrapped_key.startsWith('v2.')&&(!w||!w.pubkey))continue;
+  try{(D.keys[r.conversation_id]=D.keys[r.conversation_id]||{})[r.version]=await C.unwrap(r.wrapped_key,D.ident.priv,w&&w.pubkey)}catch(e){}}};
+const wrapRow=async(cid,ver,key,uid,user,me)=>({conversation_id:cid,user_id:uid,version:ver,wrapped_key:await C.wrap(key,user.pubkey),wrapped_by:me,recipient_fp:await C.fingerprint(user.pubkey)});
 D.newConvKeys=async(cid,ids,users,me)=>{const k=await C.newConvKey();(D.keys[cid]=D.keys[cid]||{})[1]=k;
  const rows=[];for(const id of ids){const u=users[id];if(u&&u.pubkey)rows.push(await wrapRow(cid,1,k,id,u,me))}
  if(rows.length)ok(await D.sb.from('pp_member_keys').insert(rows))};
 /* admin: give the current key to any member who lacks it (new joiners, or members whose device key changed) */
-D.ensureKeys=async(cid,ver,ids,users,me)=>{const k=D.convKey(cid,ver),res={added:[],changed:[]};if(!k)return res;
- const have=ok(await D.sb.from('pp_member_keys').select('user_id,version,recipient_fp').eq('conversation_id',cid))||[],rows=[];
+D.ensureKeys=async(cid,ver,ids,users,me)=>{const k=D.convKey(cid,ver),res={added:[],changed:[],upgraded:[]};if(!k)return res;
+ const have=ok(await D.sb.from('pp_member_keys').select('user_id,version,recipient_fp,wrapped_key').eq('conversation_id',cid))||[],rows=[];
  for(const id of ids){const u=users[id];if(!u||!u.pubkey)continue;const fp=await C.fingerprint(u.pubkey),r=have.find(x=>x.user_id===id&&x.version===ver);
-  if(!r){res.added.push(id);rows.push(await wrapRow(cid,ver,k,id,u,me))}else if(r.recipient_fp!==fp){res.changed.push(id);rows.push(await wrapRow(cid,ver,k,id,u,me))}}
+  if(!r){res.added.push(id);rows.push(await wrapRow(cid,ver,k,id,u,me))}
+  else if(r.recipient_fp!==fp){res.changed.push(id);rows.push(await wrapRow(cid,ver,k,id,u,me))}
+  else if(!String(r.wrapped_key).startsWith('v2.')){res.upgraded.push(id);rows.push(await wrapRow(cid,ver,k,id,u,me))}}   /* old-format copy: re-seal it so it opens on any device */
  if(rows.length)ok(await D.sb.from('pp_member_keys').upsert(rows));return res};
 /* admin: rotate the key (used after removing a member so they cannot read NEW messages) */
 D.rotate=async(cid,ver,ids,users,me)=>{const k=await C.newConvKey();(D.keys[cid]=D.keys[cid]||{})[ver]=k;const rows=[];
