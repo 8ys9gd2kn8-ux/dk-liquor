@@ -27,8 +27,12 @@ async function kek(priv,pub){const bits=await S.deriveBits({name:'ECDH',public:p
 const C={b64,unb64,
  async generate(){const kp=await S.generateKey(EC,true,['deriveBits']);return{pub:await S.exportKey('jwk',kp.publicKey),priv:await S.exportKey('jwk',kp.privateKey)}},
  importPriv:j=>S.importKey('jwk',j,EC,false,['deriveBits']),
+ importPrivExt:j=>S.importKey('jwk',j,EC,true,['deriveBits']),   /* extractable only until the key is backed up, then replaced by a non-extractable copy */
+ exportPriv:k=>S.exportKey('jwk',k),
+ async rawKey(k){return b64(await S.exportKey('raw',k)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')},
+ importRawKey:s=>S.importKey('raw',unb64(s.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-s.length%4)%4)),'AES-GCM',true,['encrypt','decrypt']),
  importPub:j=>S.importKey('jwk',{kty:j.kty,crv:j.crv,x:j.x,y:j.y,ext:true},EC,true,[]),
- async save(uid,priv,pub){mem[uid]={priv,pub};try{await idb(s=>s.put({priv,pub},uid),'readwrite')}catch(e){}},
+ async save(uid,priv,pub,pending){mem[uid]={priv,pub,pending:!!pending};try{await idb(s=>s.put({priv,pub,pending:!!pending},uid),'readwrite')}catch(e){}},
  async load(uid){try{const r=await idb(s=>s.get(uid));if(r)return r}catch(e){}return mem[uid]||null},
  async wipe(uid){delete mem[uid];try{await idb(s=>s.delete(uid),'readwrite')}catch(e){}},
  async backup(privJwk,pass){const salt=rnd(16),iv=rnd(12),k=await pwKey(pass,salt),ct=await S.encrypt({name:'AES-GCM',iv},k,te.encode(JSON.stringify(privJwk)));return{salt:b64(salt),iv:b64(iv),blob:b64(ct)}},

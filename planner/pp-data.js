@@ -26,22 +26,25 @@ D.verify=async(f,code,anon)=>{const sms=f.channel==='sms',type=anon?(sms?'phone_
  if(anon){const u=await D.sb.auth.updateUser({password:f.password});if(u.error)throw u.error}
  return (await D.realUser())};
 D.signIn=async({id,password})=>{const r=await D.sb.auth.signInWithPassword(id.includes('@')?{email:id,password}:{phone:'+'+D.e164(id),password});if(r.error)throw r.error;return r.data.user};
-D.signOut=async uid=>{try{if(uid)await C.wipe(uid)}catch(e){}D.ident=null;D.keys={};D.users={};if(D.ch)try{D.sb.removeChannel(D.ch)}catch(e){}await D.sb.auth.signOut()};
+D.signOut=async(uid,keepKey)=>{try{if(uid&&!keepKey)await C.wipe(uid)}catch(e){}D.ident=null;D.keys={};D.users={};if(D.ch)try{D.sb.removeChannel(D.ch)}catch(e){}await D.sb.auth.signOut()};
 D.profile=async uid=>ok(await D.sb.from('pp_profiles').select('*').eq('id',uid).maybeSingle());
 D.createProfile=async p=>ok(await D.sb.from('pp_profiles').insert(p).select().single());
 /* ---- identity keys ---- */
 D.getBackup=async uid=>ok(await D.sb.from('pp_key_backups').select('*').eq('user_id',uid).maybeSingle());
-/* returns 'ok' | 'locked' (backup exists, key not on this device) | 'nokeys' (first time: no keys yet). Passphrase is asked inside the Planner, never on the Profile page. */
+/* Keys are created AUTOMATICALLY the first time someone signs in, so every account always has a public key and others can message them
+   even while they are asleep. The passphrase is only an optional BACKUP (needed to use a second device).
+   returns 'ok' | 'locked' (backup exists, key not on this device: ask passphrase) | 'needbackup' (key exists only on another device and was never backed up) */
 D.initKeys=async(uid,pass,profile)=>{
- const loc=await C.load(uid);if(loc){D.ident={priv:loc.priv,pub:loc.pub};return 'ok'}
+ const pubUpdate=async pub=>{if(profile&&(!profile.pubkey||profile.pubkey.x!==pub.x))ok(await D.sb.from('pp_profiles').update({pubkey:pub}).eq('id',uid))};
+ const loc=await C.load(uid);if(loc){D.ident={priv:loc.priv,pub:loc.pub,pending:!!loc.pending};await pubUpdate(loc.pub);return 'ok'}
  const bk=await D.getBackup(uid);
- if(!pass)return bk?'locked':'nokeys';
- if(bk){const j=await C.restore(bk,pass),priv=await C.importPriv(j),pub=jpub(j);await C.save(uid,priv,pub);D.ident={priv,pub};
-  if(profile&&(!profile.pubkey||profile.pubkey.x!==pub.x))ok(await D.sb.from('pp_profiles').update({pubkey:pub}).eq('id',uid));return 'ok'}
- const g=await C.generate(),priv=await C.importPriv(g.priv);await C.save(uid,priv,g.pub);D.ident={priv,pub:g.pub};
- ok(await D.sb.from('pp_key_backups').upsert(Object.assign({user_id:uid},await C.backup(g.priv,pass))));
- if(profile)ok(await D.sb.from('pp_profiles').update({pubkey:g.pub}).eq('id',uid));
- return 'ok'};
+ if(bk){if(!pass)return 'locked';const j=await C.restore(bk,pass),priv=await C.importPriv(j),pub=jpub(j);await C.save(uid,priv,pub,false);D.ident={priv,pub,pending:false};await pubUpdate(pub);return 'ok'}
+ if(profile&&profile.pubkey)return 'needbackup';
+ await D.newIdentity(uid);return 'ok'};
+D.newIdentity=async uid=>{await C.wipe(uid);const g=await C.generate(),priv=await C.importPrivExt(g.priv);await C.save(uid,priv,g.pub,true);D.ident={priv,pub:g.pub,pending:true};D.keys={};
+ ok(await D.sb.from('pp_profiles').update({pubkey:g.pub}).eq('id',uid))};
+D.backupKeys=async(uid,pass)=>{const loc=await C.load(uid);if(!loc)throw new Error('No message key on this device');let j;try{j=await C.exportPriv(loc.priv)}catch(e){throw new Error('This key is already backed up')}
+ ok(await D.sb.from('pp_key_backups').upsert(Object.assign({user_id:uid},await C.backup(j,pass))));const priv=await C.importPriv(j);await C.save(uid,priv,loc.pub,false);D.ident={priv,pub:loc.pub,pending:false}};
 D.fingerprint=C.fingerprint;
 /* ---- conversation keys ---- */
 D.convKey=(cid,v)=>(D.keys[cid]||{})[v];
@@ -99,9 +102,14 @@ D.activity=(cid,actor,text,item)=>w('pp_activity',{conversation_id:cid,actor,tex
 /* ---- invitations (secret token is only in the link; the database stores its SHA-256 hash) ---- */
 D.createInvite=async(cid,label,me)=>{const t=C.b64(crypto.getRandomValues(new Uint8Array(24))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
  await w('pp_invites',{conversation_id:cid,token_hash:await C.sha256hex(t),label:String(label).slice(0,80),created_by:me});
- return location.origin+location.pathname+'#join='+t};
+ const ver=D.latest(cid),k=D.convKey(cid,ver);let frag='#join='+t;if(k)frag+='&k='+await C.rawKey(k)+'&kv='+ver;
+ return location.origin+location.pathname+frag};
 D.accept=t=>D.sb.rpc('pp_accept_invite',{p_token:t}).then(ok);
-D.joinToken=()=>{const m=/[#&]join=([\w-]{20,64})/.exec(location.hash);if(m){try{sessionStorage.setItem('dk-join',m[1])}catch(e){}history.replaceState(null,'',location.pathname+location.search)}try{return sessionStorage.getItem('dk-join')}catch(e){return null}};
+D.joinToken=()=>{const h=location.hash,m=/[#&]join=([\w-]{20,64})/.exec(h);
+ if(m){const k=/[&]k=([\w-]{40,50})/.exec(h),v=/[&]kv=(\d{1,3})/.exec(h);try{sessionStorage.setItem('dk-join',JSON.stringify({t:m[1],k:k?k[1]:null,kv:v?+v[1]:1}))}catch(e){}history.replaceState(null,'',location.pathname+location.search)}
+ try{const s=sessionStorage.getItem('dk-join');return s?JSON.parse(s):null}catch(e){return null}};
+/* a person who joins by link receives the chat key inside the link and seals their own copy, so nobody else needs to be online */
+D.adoptKey=async(cid,ver,rawKey,me)=>{const key=await C.importRawKey(rawKey);(D.keys[cid]=D.keys[cid]||{})[ver]=key;try{await w('pp_member_keys',await wrapRow(cid,ver,key,me,{pubkey:D.ident.pub},me))}catch(e){}};
 D.clearJoin=()=>{try{sessionStorage.removeItem('dk-join')}catch(e){}};
 /* ---- contacts: only salted hashes of phone numbers are sent; the server returns matches only ---- */
 D.matchContacts=async list=>{const map={},hs=[];for(const c of list){const h=await D.hashPhone(c.phone);map[h]=c;hs.push(h)}
