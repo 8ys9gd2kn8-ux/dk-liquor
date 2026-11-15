@@ -339,13 +339,13 @@ function render(){
  applyTheme();
  S.products.forEach(p=>{p.category=normCat(p.category)});
  const A=admin();
- const tabs=A?[['orders','Orders'],['products','Products'],['combos','Combos'],['promos','Promotions'],['ads','Ads'],['settings','Settings']]:[['shop','Home'],['discover','Discover'],['combos','Combos'],['profile','Profile'],['cart','Orders'+(Object.keys(cart).length?` (${Object.values(cart).reduce((a,b)=>a+b,0)})`:'')]];
+ const tabs=A?[['orders','Orders'],['products','Products'],['posters','Posters'],['combos','Combos'],['promos','Promotions'],['ads','Ads'],['settings','Settings']]:[['shop','Home'],['discover','Discover'],['combos','Combos'],['profile','Profile'],['cart','Orders'+(Object.keys(cart).length?` (${Object.values(cart).reduce((a,b)=>a+b,0)})`:'')]];
  if(!tabs.some(t=>t[0]===tab))tab=tabs[0][0];
  let body='';
  if(!aged&&!A)body=`<div class="modal" style="align-items:center"><div class="sheet" style="border-radius:16px;text-align:center"><img src="${LOGO}" alt="D&amp;K Beverages" style="width:120px;height:120px;border-radius:50%;margin-bottom:8px"><h2>Are you of legal drinking age?</h2><p class="mute">This shop sells alcohol. You must be of legal drinking age in your country.</p><button class="btn" data-a="age">Yes, enter</button></div></div>`;
  else if(!db)body='<main><p class="mute">'+esc(window.CONNECT_ERR||'Connecting to the shop…')+'</p></main>';
  else body=`<div class="tabs ${A?'':'cust'}">${tabs.map(t=>`<button class="tab ${t[0]===tab?'on':''}" data-a="tab" data-v="${t[0]}">${t[1]}</button>`).join('')}</div><main class="${attOn()?'hasatt':''}">${msg?`<div class="banner">${esc(msg)}</div>`:''}
- ${A?{orders:aOrders,products:aProducts,combos:aCombos,promos:aPromos,ads:aAds,settings:aSettings}[tab]():{shop,combos,discover,profile,cart:cartView}[tab]()}</main>`;
+ ${A?{orders:aOrders,products:aProducts,posters:aPosters,combos:aCombos,promos:aPromos,ads:aAds,settings:aSettings}[tab]():{shop,combos,discover,profile,cart:cartView}[tab]()}</main>`;
  const keep=['cn','cp','cr','ca','sp','sw','sm','sh','sd','pn','pp','pr','pa'].map(i=>$('#'+i)?.value);const scs=[...document.querySelectorAll('.full')].map(e=>e.scrollTop);const wy=window.scrollY,hs=['.cats','.hero','.rel','.tabs','.adtrack','.crow'].map(s=>[...document.querySelectorAll(s)].map(e=>e.scrollLeft));
  if(orbitCtl&&orbitCtl.el.parentNode)orbitCtl.el.remove();
  $('#app').innerHTML=`${isAdmin?`<div class="admin-bar"><span>${asCust?'Previewing as customer':'Admin mode'}</span><span style="display:flex;gap:6px"><button data-a="toggle">${asCust?'Back to admin':'View as customer'}</button><button data-a="signout">Sign out</button></span></div>`:''}
@@ -451,6 +451,10 @@ function loginView(sb,err){
  $('#lb').onclick=go;$('#lp').onkeydown=e=>{if(e.key==='Enter')go()}}
 
 /* BOOT */
+/* A QR code / shared link like  <shop>/#product=<id>  opens that product straight away */
+let pendingProd=(/[#&]product=([\w.~%-]+)/.exec(location.hash)||[])[1]||null;if(pendingProd){try{pendingProd=decodeURIComponent(pendingProd)}catch(e){}}
+const openProdFromLink=()=>{if(!pendingProd||isAdmin)return;if(P(pendingProd)){detail=pendingProd;pendingProd=null;dq=1;resetSc=true;peek=null;tab='shop';try{history.replaceState(null,'',location.pathname+location.search)}catch(e){}}};
+window.addEventListener('hashchange',()=>{const mm=/[#&]product=([\w.~%-]+)/.exec(location.hash);if(mm&&!isAdmin){try{pendingProd=decodeURIComponent(mm[1])}catch(e){pendingProd=mm[1]}openProdFromLink();render()}});
 let rq=0;const softRender=()=>{if(rq)return;rq=requestAnimationFrame(()=>{rq=0;render()})};
 const need=new Set(['products','combos','promos','ads','categories','contact','theme','orders']);
 const got=n=>{need.delete(n);if(!need.size&&window.hideSplash)hideSplash()};
@@ -469,7 +473,7 @@ const got=n=>{need.delete(n);if(!need.size&&window.hideSplash)hideSplash()};
   }else if(!session){const r=await sb.auth.signInAnonymously();session=r.data&&r.data.session}
   uid=session?session.user.id:'guest';
   db=makeDb(sb);
-  ['products','combos','promos','ads','categories'].forEach(c=>db.collection(c).onSnapshot(s=>{S[c]=s.docs.map(d=>({id:d.id,...d.data()}));if(c==='categories')syncCats();softRender();got(c)},()=>{got(c)}));
+  ['products','combos','promos','ads','categories'].forEach(c=>db.collection(c).onSnapshot(s=>{S[c]=s.docs.map(d=>({id:d.id,...d.data()}));if(c==='categories')syncCats();if(c==='products')openProdFromLink();softRender();got(c)},()=>{got(c)}));
   db.collection('settings').doc('contact').onSnapshot(s=>{S.contact=s.exists?s.data():{};softRender();got('contact')},()=>{got('contact')});
   db.collection('settings').doc('theme').onSnapshot(s=>{S.theme=s.exists?s.data():{};softRender();got('theme')},()=>{got('theme')});
   db.collection('orders').onSnapshot(s=>{S.orders=s.docs.map(d=>({id:d.id,...d.data()}));S.mine=S.orders.filter(o=>o.uid===uid).sort((a,b)=>a.ts-b.ts);softRender();got('orders')},()=>{got('orders')});
